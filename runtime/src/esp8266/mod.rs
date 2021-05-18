@@ -27,8 +27,8 @@ pub fn debug(hint: usize) {
     }
 
     let mut hw = HW.lock();
-    set(&mut hw.gpio2, (hint & 0b01) != 0);
-    set(&mut hw.gpio3, (hint & 0b10) != 0);
+    set(&mut hw.gpio0, (hint & 0b01) != 0);
+    set(&mut hw.gpio2, (hint & 0b10) != 0);
 }
 
 pub fn delay_ms(millis: u32) {
@@ -36,8 +36,8 @@ pub fn delay_ms(millis: u32) {
 }
 
 struct Hw {
+    gpio0: gpio::Gpio0<Output<PushPull>>,
     gpio2: gpio::Gpio2<Output<PushPull>>,
-    gpio3: gpio::Gpio3<Output<PushPull>>,
     timer1: Timer1,
 }
 
@@ -49,8 +49,8 @@ static HW: Lazy<Mutex<Hw>> = Lazy::new(|| {
     let (timer1, _) = peripherals.TIMER.timers();
 
     Mutex::new(Hw {
+        gpio0: gpio.gpio0.into_push_pull_output(),
         gpio2: gpio.gpio2.into_push_pull_output(),
-        gpio3: gpio.gpio3.into_push_pull_output(),
         timer1,
     })
 });
