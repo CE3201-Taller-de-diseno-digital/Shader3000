@@ -13,3 +13,7 @@ authors = ["Alejandro Soto <alejandro@34project.org>",
            "Natalia GB <natigonzalezbermudez@gmail.com>",
            "josfemova <josfemova@gmail.com>",
            "Jose Alejandro Chavarria <joalchama@gmail.com>"]
+
+[profile.release]
+panic = "abort"
+lto = true

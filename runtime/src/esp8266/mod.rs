@@ -1,10 +1,10 @@
-use esp8266_hal::entry;
+use esp8266_hal::entry};
 
 pub fn debug() {
     todo!()
 }
 
-pub fn delay_ms(_millis: u32) {
+pub fn delay_ms(millis: u32) {
     todo!()
 }
 
