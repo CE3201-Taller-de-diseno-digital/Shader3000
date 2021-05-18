@@ -1,10 +1,8 @@
-cargo-features = ["edition2021"]
-
 [package]
 name = "editor"
 version = "0.1.0"
-edition = "2021"
+edition = "2018"
 authors = ["Alejandro Soto <alejandro@34project.org>",
-		   "Natalia GB <natigonzalezbermudez@gmail.com>",
+           "Natalia GB <natigonzalezbermudez@gmail.com>",
            "josfemova <josfemova@gmail.com>",
-		   "Jose Alejandro Chavarria <joalchama@gmail.com>"]
+           "Jose Alejandro Chavarria <joalchama@gmail.com>"]

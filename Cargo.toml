@@ -1,2 +1,15 @@
+cargo-features = ["named-profiles"]
+
 [workspace]
-members = ["compiler", "editor", "runtime"]
+members = [".", "runtime", "editor"]
+default-members = [".", "runtime", "editor"]
+
+[package]
+name = "compiler"
+version = "0.1.0"
+edition = "2018"
+license-file = "LICENSE"
+authors = ["Alejandro Soto <alejandro@34project.org>",
+           "Natalia GB <natigonzalezbermudez@gmail.com>",
+           "josfemova <josfemova@gmail.com>",
+           "Jose Alejandro Chavarria <joalchama@gmail.com>"]
