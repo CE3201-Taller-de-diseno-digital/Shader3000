@@ -22,19 +22,14 @@ pub fn write<W: Write>(program: &Program, arch: Architecture, output: &mut W) ->
         writeln!(output, ".lcomm {}, {}", name, value_size)?;
     }
 
-    writeln!(output, ".text")?;
+    writeln!(output, ".text\n.global user_main")?;
 
     for function in &program.code {
-        let name = match function.body {
-            FunctionBody::Generated { .. } => &function.name,
-            _ => continue,
-        };
-
-        writeln!(output, ".global {0}\n{0}:", name)?;
-
-        match arch {
-            X86_64 => x86_64::emit_function(output, function)?,
-            Xtensa => xtensa::emit_function(output, function)?,
+        if let FunctionBody::Generated { .. } = function.body {
+            match arch {
+                X86_64 => x86_64::emit_function(output, function)?,
+                Xtensa => xtensa::emit_function(output, function)?,
+            }
         }
     }
 

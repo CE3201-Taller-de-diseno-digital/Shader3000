@@ -51,6 +51,8 @@ struct XtensaFunction<'a, W> {
 
 impl<W: Write> XtensaFunction<'_, W> {
     fn write_asm(mut self) -> io::Result<()> {
+        writeln!(self.output, ".section .text.{0}\n{0}:", self.function.name)?;
+
         let (inner_locals, instructions) = match &self.function.body {
             FunctionBody::Generated {
                 inner_locals,
@@ -121,7 +123,8 @@ impl<W: Write> XtensaFunction<'_, W> {
 
             LoadGlobal(global, local) => {
                 let Global(global) = global.deref();
-                emit!(self, "l32r a2, {}", global)?;
+                emit!(self, "movi a2, {}", global)?;
+                emit!(self, "l32i a2, a2, 0")?;
                 self.register_to_local(Reg::A2, *local)
             }
 

@@ -11,7 +11,6 @@ pub const VALUE_SIZE: u32 = 8;
 
 pub fn emit_function<W: Write>(output: &mut W, function: &Function) -> io::Result<()> {
     let x86_function = X86Function { output, function };
-
     x86_function.write_asm()
 }
 
@@ -71,6 +70,8 @@ struct X86Function<'a, W> {
 
 impl<W: Write> X86Function<'_, W> {
     fn write_asm(mut self) -> io::Result<()> {
+        writeln!(self.output, "{}:", self.function.name)?;
+
         let (inner_locals, instructions) = match &self.function.body {
             FunctionBody::Generated {
                 inner_locals,

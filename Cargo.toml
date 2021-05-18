@@ -16,7 +16,6 @@ authors = ["Alejandro Soto <alejandro@34project.org>",
 
 [profile.release]
 panic = "abort"
-lto = true
 
 [dependencies]
 clap = "2.33.3"

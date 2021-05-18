@@ -1,4 +1,4 @@
 .global user_main
 user_main:
-	j builtin_debug
+	j builtin_delay_mil
 	ret

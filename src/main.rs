@@ -16,7 +16,7 @@ fn main() {
     let program = test_program();
     let mut stdout = std::io::stdout();
 
-    codegen::write(&program, Architecture::X86_64, &mut stdout).unwrap();
+    codegen::write(&program, Architecture::Xtensa, &mut stdout).unwrap();
 }
 
 fn test_program() -> Program {
