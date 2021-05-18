@@ -1,4 +1,11 @@
-use esp8266_hal::entry;
+use esp8266_hal::{
+    ehal::blocking::delay::DelayMs,
+    entry,
+    target::Peripherals,
+    timer::{Timer1, TimerExt},
+};
+
+use spin::{Lazy, Mutex};
 
 //FIXME
 mod hacks {
@@ -10,8 +17,19 @@ pub fn debug(_hint: usize) {
 }
 
 pub fn delay_ms(millis: u32) {
-    todo!()
+    HW.lock().timer1.delay_ms(millis);
 }
+
+struct Hw {
+    timer1: Timer1,
+}
+
+static HW: Lazy<Mutex<Hw>> = Lazy::new(|| {
+    let peripherals = Peripherals::take().unwrap();
+    let (timer1, _) = peripherals.TIMER.timers();
+
+    Mutex::new(Hw { timer1 })
+});
 
 #[entry]
 fn main() -> ! {
