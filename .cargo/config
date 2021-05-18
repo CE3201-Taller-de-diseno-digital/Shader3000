@@ -1,0 +1,6 @@
+[target.xtensa-esp8266-none-elf]
+rustflags = [
+	"-C", "debuginfo=0",
+	"-C", "link-arg=-nostartfiles",
+	"-C", "link-arg=-Wl,-Tlink.x",
+]

@@ -2,7 +2,11 @@
 name = "runtime"
 version = "0.1.0"
 edition = "2018"
+autobins = false
 authors = ["Alejandro Soto <alejandro@34project.org>",
            "Natalia GB <natigonzalezbermudez@gmail.com>",
            "josfemova <josfemova@gmail.com>",
            "Jose Alejandro Chavarria <joalchama@gmail.com>"]
+
+[target.'cfg(target_arch = "xtensa")'.dependencies]
+esp8266-hal = "0.4.0"
