@@ -37,6 +37,48 @@ fn hosted_main() -> ExitCode {
         return ExitCode::FAILURE;
     };
 
+    let profile = env::var("PROFILE").unwrap();
+
+    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap()).canonicalize().unwrap();
+    let object_file = out_path.join("entry.o");
+
+    let status = Command::new(env::var("RUSTC").unwrap())
+        .args(&[
+            "-O",
+            "-C",
+            "panic=abort",
+            "--edition=2018",
+            "--emit=obj",
+            "-o",
+            object_file.to_str().unwrap(),
+            "src/entry.rs",
+        ])
+        .spawn()
+        .expect("Failed to run rustc")
+        .wait()
+        .unwrap();
+
+    if !status.success() {
+        return ExitCode::FAILURE;
+    }
+
+    let archive_file = out_path.join("librt_entry.a");
+    let status = Command::new("ar")
+    .args(&[
+        "rcs",
+        archive_file.to_str().unwrap(),
+        object_file.to_str().unwrap(),
+    ])
+    .spawn().expect("Failed to run ar")
+    .wait().unwrap();
+
+    if !status.success() {
+        return ExitCode::FAILURE;
+    }
+
+    println!("cargo:rustc-link-search={}", out_path.to_str().unwrap());
+    println!("cargo:rustc-link-lib=static=rt_entry");
+
     let mut bin_path = xtensa_root.join("build");
     bin_path.push(env::var("HOST").unwrap());
     bin_path.push("stage2/bin");
