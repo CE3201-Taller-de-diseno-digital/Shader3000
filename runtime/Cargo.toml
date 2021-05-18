@@ -16,4 +16,5 @@ spin = "0.9.0"
 esp8266-hal = "0.4.0"
 
 [build-dependencies]
+cc = "1.0.67"
 nix = "0.20.0"

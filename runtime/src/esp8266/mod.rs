@@ -1,4 +1,9 @@
-use esp8266_hal::entry};
+use esp8266_hal::entry;
+
+//FIXME
+mod hacks {
+    mod atomic;
+}
 
 pub fn debug() {
     todo!()
