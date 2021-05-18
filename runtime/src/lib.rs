@@ -7,7 +7,7 @@ mod hosted;
 use crate::hosted as sys;
 
 #[no_mangle]
-pub fn handover() {
+pub extern "Rust" fn handover() {
     extern "C" {
         fn user_main();
     }
