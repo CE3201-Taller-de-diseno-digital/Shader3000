@@ -39,7 +39,9 @@ fn hosted_main() -> ExitCode {
 
     let profile = env::var("PROFILE").unwrap();
 
-    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap()).canonicalize().unwrap();
+    let out_path = PathBuf::from(env::var("OUT_DIR").unwrap())
+        .canonicalize()
+        .unwrap();
     let object_file = out_path.join("entry.o");
 
     let status = Command::new(env::var("RUSTC").unwrap())
@@ -64,13 +66,15 @@ fn hosted_main() -> ExitCode {
 
     let archive_file = out_path.join("librt_entry.a");
     let status = Command::new("ar")
-    .args(&[
-        "rcs",
-        archive_file.to_str().unwrap(),
-        object_file.to_str().unwrap(),
-    ])
-    .spawn().expect("Failed to run ar")
-    .wait().unwrap();
+        .args(&[
+            "rcs",
+            archive_file.to_str().unwrap(),
+            object_file.to_str().unwrap(),
+        ])
+        .spawn()
+        .expect("Failed to run ar")
+        .wait()
+        .unwrap();
 
     if !status.success() {
         return ExitCode::FAILURE;

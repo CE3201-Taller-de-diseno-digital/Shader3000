@@ -18,4 +18,5 @@ authors = ["Alejandro Soto <alejandro@34project.org>",
 panic = "abort"
 
 [dependencies]
-clap = "2.33.3"
+anyhow = "1.0.40"
+clap = "^3.0.0-beta.2"

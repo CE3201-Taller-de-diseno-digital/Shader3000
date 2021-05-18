@@ -15,7 +15,7 @@ use crate::hosted as sys;
 use crate::esp8266 as sys;
 
 #[no_mangle]
-pub extern "Rust" fn handover() {
+pub fn handover() {
     extern "C" {
         fn user_main();
     }

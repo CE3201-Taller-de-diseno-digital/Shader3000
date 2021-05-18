@@ -1,22 +1,55 @@
-use clap::{self, crate_authors, crate_description, crate_version};
+use anyhow::{self, Context};
+use clap::{self, crate_version, Arg};
 use compiler::{
     codegen::{self, Architecture},
     ir::*,
 };
 
-use std::rc::Rc;
+use std::{fs::File, rc::Rc};
 
-fn main() {
-    let _args = clap::App::new("AnimationLed compiler")
-        .author(crate_authors!())
-        .about(crate_description!())
+fn main() -> anyhow::Result<()> {
+    let args = clap::App::new("AnimationLed compiler")
         .version(crate_version!())
+        .arg(
+            Arg::new("target")
+                .short('t')
+                .value_name("ARCH")
+                .takes_value(true)
+                .default_value("x86_64")
+                .possible_values(&["x86_64", "xtensa"])
+                .about("Target architecture"),
+        )
+        .arg(
+            Arg::new("output")
+                .short('o')
+                .takes_value(true)
+                .required(true)
+                .about("Output file ('-' for stdout)"),
+        )
         .get_matches();
 
     let program = test_program();
-    let mut stdout = std::io::stdout();
+    let arch = match args.value_of("target").unwrap() {
+        "x86_64" => Architecture::X86_64,
+        "xtensa" => Architecture::Xtensa,
+        _ => unreachable!(),
+    };
 
-    codegen::write(&program, Architecture::Xtensa, &mut stdout).unwrap();
+    let result = match args.value_of("output").unwrap() {
+        "-" => {
+            let mut stdout = std::io::stdout();
+            codegen::write(&program, arch, &mut stdout)
+        }
+
+        path => {
+            let mut file = File::create(path)
+                .with_context(|| format!("Failed to open for writing: {}", path))?;
+
+            codegen::write(&program, arch, &mut file)
+        }
+    };
+
+    result.context("Failed to emit generated code").into()
 }
 
 fn test_program() -> Program {
