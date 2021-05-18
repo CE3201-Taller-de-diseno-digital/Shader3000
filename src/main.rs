@@ -1,3 +1,4 @@
+use clap::{self, crate_authors, crate_description, crate_version};
 use compiler::{
     codegen::{self, Architecture},
     ir::*,
@@ -6,6 +7,12 @@ use compiler::{
 use std::rc::Rc;
 
 fn main() {
+    let _args = clap::App::new("AnimationLed compiler")
+        .author(crate_authors!())
+        .about(crate_description!())
+        .version(crate_version!())
+        .get_matches();
+
     let program = test_program();
     let mut stdout = std::io::stdout();
 
