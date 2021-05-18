@@ -13,7 +13,7 @@ pub fn write<W: Write>(program: &Program, arch: Architecture, output: &mut W) ->
     use Architecture::*;
 
     let value_size = match arch {
-        X86_64 => todo!(),
+        X86_64 => x86_64::VALUE_SIZE,
         Xtensa => todo!(),
     };
 
@@ -33,10 +33,32 @@ pub fn write<W: Write>(program: &Program, arch: Architecture, output: &mut W) ->
         writeln!(output, ".global {0}\n{0}:", name)?;
 
         match arch {
-            X86_64 => todo!(),
+            X86_64 => x86_64::emit_function(output, function)?,
             Xtensa => todo!(),
         }
     }
 
     Ok(())
+}
+
+macro_rules! emit {
+    ($self:expr, $($format:tt)*) => {{
+        write!($self.output, "\t")?;
+        writeln!($self.output, $($format)*)
+    }};
+}
+
+mod x86_64;
+mod xtensa;
+
+fn emit_label<W: Write>(
+    output: &mut W,
+    function: &Function,
+    Label(label): Label,
+) -> io::Result<()> {
+    writeln!(output, "\t.L{}.{}:", function.name, label)
+}
+
+fn label_symbol(function: &Function, Label(label): Label) -> String {
+    format!(".L{}.{}", function.name, label)
 }
