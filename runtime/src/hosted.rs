@@ -1,5 +1,5 @@
-pub fn debug() {
-    dbg!();
+pub fn debug(hint: usize) {
+    dbg!(hint);
 }
 
 pub fn delay_ms(millis: u32) {

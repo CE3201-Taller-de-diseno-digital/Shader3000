@@ -5,7 +5,7 @@ mod hacks {
     mod atomic;
 }
 
-pub fn debug() {
+pub fn debug(_hint: usize) {
     todo!()
 }
 
