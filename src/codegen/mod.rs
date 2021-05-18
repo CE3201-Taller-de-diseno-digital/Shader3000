@@ -14,7 +14,7 @@ pub fn write<W: Write>(program: &Program, arch: Architecture, output: &mut W) ->
 
     let value_size = match arch {
         X86_64 => x86_64::VALUE_SIZE,
-        Xtensa => todo!(),
+        Xtensa => xtensa::VALUE_SIZE,
     };
 
     for global in &program.globals {
@@ -34,7 +34,7 @@ pub fn write<W: Write>(program: &Program, arch: Architecture, output: &mut W) ->
 
         match arch {
             X86_64 => x86_64::emit_function(output, function)?,
-            Xtensa => todo!(),
+            Xtensa => xtensa::emit_function(output, function)?,
         }
     }
 
