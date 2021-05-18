@@ -53,14 +53,20 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn test_program() -> Program {
-    let builtin_true = Rc::new(Function {
-        name: String::from("builtin_true"),
+    let builtin_zero = Rc::new(Function {
+        name: String::from("builtin_zero"),
         parameters: 0,
         body: FunctionBody::External,
     });
 
-    let builtin_neg = Rc::new(Function {
-        name: String::from("builtin_neg"),
+    let builtin_inc = Rc::new(Function {
+        name: String::from("builtin_inc"),
+        parameters: 1,
+        body: FunctionBody::External,
+    });
+
+    let builtin_delay_seg = Rc::new(Function {
+        name: String::from("builtin_delay_seg"),
         parameters: 1,
         body: FunctionBody::External,
     });
@@ -71,66 +77,40 @@ fn test_program() -> Program {
         body: FunctionBody::External,
     });
 
-    let global_foo = Rc::new(Global(String::from("foo")));
-    let global_bar = Rc::new(Global(String::from("bar")));
-
-    let user_test = Rc::new(Function {
-        name: String::from("user_test"),
-        parameters: 9,
-        body: FunctionBody::Generated {
-            inner_locals: 1,
-            instructions: vec![
-                Instruction::LoadGlobal(Rc::clone(&global_foo), Local(9)),
-                Instruction::Call {
-                    target: Rc::clone(&builtin_debug),
-                    arguments: vec![Local(9)],
-                    output: None,
-                },
-                Instruction::Call {
-                    target: Rc::clone(&builtin_neg),
-                    arguments: vec![Local(9)],
-                    output: Some(Local(9)),
-                },
-                Instruction::StoreGlobal(Local(9), Rc::clone(&global_foo)),
-            ],
-        },
-    });
-
     let user_main = Rc::new(Function {
         name: String::from("user_main"),
         parameters: 0,
         body: FunctionBody::Generated {
-            inner_locals: 9,
+            inner_locals: 1,
             instructions: vec![
                 Instruction::Call {
-                    target: Rc::clone(&builtin_true),
+                    target: Rc::clone(&builtin_zero),
                     arguments: vec![],
                     output: Some(Local(0)),
                 },
-                Instruction::StoreGlobal(Local(0), Rc::clone(&global_foo)),
-                Instruction::Label(Label(42)),
+                Instruction::Label(Label(0)),
                 Instruction::Call {
-                    target: Rc::clone(&user_test),
-                    arguments: vec![
-                        Local(0),
-                        Local(1),
-                        Local(2),
-                        Local(3),
-                        Local(4),
-                        Local(5),
-                        Local(6),
-                        Local(7),
-                        Local(8),
-                    ],
+                    target: Rc::clone(&builtin_inc),
+                    arguments: vec![Local(0)],
                     output: Some(Local(0)),
                 },
-                Instruction::Jump(Label(42)),
+                Instruction::Call {
+                    target: Rc::clone(&builtin_debug),
+                    arguments: vec![Local(0)],
+                    output: None,
+                },
+                Instruction::Call {
+                    target: Rc::clone(&builtin_delay_seg),
+                    arguments: vec![Local(0)],
+                    output: None,
+                },
+                Instruction::Jump(Label(0)),
             ],
         },
     });
 
     Program {
-        globals: vec![global_foo, global_bar],
-        code: vec![user_test, user_main],
+        globals: vec![],
+        code: vec![user_main],
     }
 }

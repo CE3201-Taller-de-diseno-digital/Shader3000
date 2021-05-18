@@ -106,8 +106,6 @@ fn hosted_main() -> ExitCode {
             &profile,
             "--package",
             "runtime",
-            "--example",
-            "esp8266",
         ])
         .exec();
 
