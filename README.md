@@ -21,7 +21,7 @@ linestretch: 1.15
 bibliography: bibliografia.bib
 csl: /home/josfemova/UsefulRepos/styles/apa.csl
 nocite: |
-    @cita
+    @lexyacc, @rustbook, @esp8266-hal, @esp8266-techref, @esp8266-pinout, @mabez, @rust-xtensa, @xtensa-assembly, @shiftregister-datasheet, @multiplexor-datasheet
 ...
 
 \maketitle
