@@ -37,10 +37,13 @@ Se resuelven dudas mayores referentes al proyecto
 
 ### 23 de mayo
 
-Compañeros de trabajo preparan ambiente de programacion
+Compañeros de trabajo preparan ambiente de programación
 Se agregan fuentes consultadas hasta el momento a la bibliografía
+Se agrega documentación sobre alternativas de solución y justificación 
 
 ### 24 de mayo
+
+Se completa documentación sobre alternativas de solución y justificación de la implementada
 
 ### 25 de mayo
 
