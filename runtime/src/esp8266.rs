@@ -7,12 +7,6 @@ use esp8266_hal::{
 };
 
 use core::convert::Infallible;
-use spin::{Lazy, Mutex};
-
-//FIXME
-mod hacks {
-    mod atomic;
-}
 
 pub fn debug(hint: usize) {
     fn set<Pin>(pin: &mut Pin, condition: bool)
@@ -26,13 +20,17 @@ pub fn debug(hint: usize) {
         }
     }
 
-    let mut hw = HW.lock();
-    set(&mut hw.gpio0, (hint & 0b01) != 0);
-    set(&mut hw.gpio2, (hint & 0b10) != 0);
+    unsafe {
+        let hw = HW.as_mut().unwrap();
+        set(&mut hw.gpio0, (hint & 0b01) != 0);
+        set(&mut hw.gpio2, (hint & 0b10) != 0);
+    }
 }
 
 pub fn delay_ms(millis: u32) {
-    HW.lock().timer1.delay_ms(millis);
+    unsafe {
+        HW.as_mut().unwrap().timer1.delay_ms(millis);
+    }
 }
 
 struct Hw {
@@ -41,22 +39,24 @@ struct Hw {
     timer1: Timer1,
 }
 
-static HW: Lazy<Mutex<Hw>> = Lazy::new(|| {
+static mut HW: Option<Hw> = None;
+
+#[entry]
+fn main() -> ! {
     use gpio::GpioExt;
 
     let peripherals = Peripherals::take().unwrap();
     let gpio = peripherals.GPIO.split();
     let (timer1, _) = peripherals.TIMER.timers();
 
-    Mutex::new(Hw {
-        gpio0: gpio.gpio0.into_push_pull_output(),
-        gpio2: gpio.gpio2.into_push_pull_output(),
-        timer1,
-    })
-});
+    unsafe {
+        HW = Some(Hw {
+            gpio0: gpio.gpio0.into_push_pull_output(),
+            gpio2: gpio.gpio2.into_push_pull_output(),
+            timer1,
+        });
+    }
 
-#[entry]
-fn main() -> ! {
     crate::handover();
     panic!("user_main() returned")
 }
