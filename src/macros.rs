@@ -17,8 +17,12 @@ macro_rules! dispatch_arch {
 }
 
 macro_rules! emit {
-    ($self:expr, $($format:tt)*) => {{
-        write!($self.output, "\t")?;
+    ($self:expr, $opcode:expr) => {
+        writeln!($self.output, "\t{}", $opcode)
+    };
+
+    ($self:expr, $opcode:expr, $($format:tt)*) => {{
+        write!($self.output, "\t{:8}", $opcode)?;
         writeln!($self.output, $($format)*)
     }};
 }

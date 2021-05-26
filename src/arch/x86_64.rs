@@ -94,8 +94,8 @@ impl<W: Write> X86Function<'_, W> {
         };
 
         // Prólogo, crea un stack frame
-        emit!(self, "push %rbp")?;
-        emit!(self, "mov %rsp, %rbp")?;
+        emit!(self, "push", "%rbp")?;
+        emit!(self, "mov", "%rsp, %rbp")?;
 
         // Se reserva memoria para locales
         let total_locals = self.function.parameters + inner_locals;
@@ -115,8 +115,8 @@ impl<W: Write> X86Function<'_, W> {
         }
 
         // Epílogo, revierte al estado justo antes de la llamada
-        emit!(self, "mov %rbp, %rsp")?;
-        emit!(self, "pop %rbp")?;
+        emit!(self, "mov", "%rbp, %rsp")?;
+        emit!(self, "pop", "%rbp")?;
         emit!(self, "ret")
     }
 
@@ -125,23 +125,23 @@ impl<W: Write> X86Function<'_, W> {
 
         match instruction {
             Label(label) => emit_label(self.output, self.function, *label),
-            Jump(label) => emit!(self, "jmp {}", label_symbol(self.function, *label)),
+            Jump(label) => emit!(self, "jmp", "{}", label_symbol(self.function, *label)),
             JumpIfFalse(local, label) => {
                 self.local_to_register(*local, Reg::Rax)?;
-                emit!(self, "testl %eax, %eax")?;
-                emit!(self, "jz {}", label_symbol(self.function, *label))
+                emit!(self, "testl", "%eax, %eax")?;
+                emit!(self, "jz", "{}", label_symbol(self.function, *label))
             }
 
             LoadGlobal(global, local) => {
                 let Global(global) = global.deref();
-                emit!(self, "mov {}(%rip), %rax", global)?;
+                emit!(self, "mov", "{}(%rip), %rax", global)?;
                 self.register_to_local(Reg::Rax, *local)
             }
 
             StoreGlobal(local, global) => {
                 let Global(global) = global.deref();
                 self.local_to_register(*local, Reg::Rax)?;
-                emit!(self, "mov %rax, {}(%rip)", global)
+                emit!(self, "mov", "%rax, {}(%rip)", global)
             }
 
             Call {
@@ -161,7 +161,7 @@ impl<W: Write> X86Function<'_, W> {
         // Argumentos del séptimo en adelante se colocan en stack en orden inverso
         let pushed = (arguments.len() as u32).max(Reg::MAX_ARGS) - Reg::MAX_ARGS;
         for argument in arguments.iter().rev().take(pushed as usize) {
-            emit!(self, "push {}", self.local_address(*argument))?;
+            emit!(self, "push", "{}", self.local_address(*argument))?;
         }
 
         // Los primeros seis argumentos se colocan en registros específicos
@@ -181,7 +181,7 @@ impl<W: Write> X86Function<'_, W> {
             0
         };
 
-        emit!(self, "call {}", target.name)?;
+        emit!(self, "call", "{}", target.name)?;
         if let Some(output_local) = output_local {
             self.register_to_local(Reg::Rax, output_local)?;
         }
@@ -195,17 +195,17 @@ impl<W: Write> X86Function<'_, W> {
     }
 
     fn local_to_register(&mut self, local: Local, register: Reg) -> io::Result<()> {
-        emit!(self, "mov {}, %{}", self.local_address(local), register)
+        emit!(self, "mov", "{}, %{}", self.local_address(local), register)
     }
 
     fn register_to_local(&mut self, register: Reg, local: Local) -> io::Result<()> {
-        emit!(self, "mov %{}, {}", register, self.local_address(local))
+        emit!(self, "mov", "%{}, {}", register, self.local_address(local))
     }
 
     fn move_rsp(&mut self, offset: i32) -> io::Result<()> {
         let instruction = if offset < 0 { "subq" } else { "addq" };
         let offset = offset.abs() * VALUE_SIZE as i32;
-        emit!(self, "{} $0x{:x}, %rsp", instruction, offset)
+        emit!(self, instruction, "$0x{:x}, %rsp", offset)
     }
 
     fn local_address(&self, Local(local): Local) -> String {

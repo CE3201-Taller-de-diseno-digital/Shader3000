@@ -101,7 +101,7 @@ impl<W: Write> XtensaFunction<'_, W> {
 
         // Se preserva la dirección de retorno
         let a0_offset = VALUE_SIZE as i32 * (self.frame_offset - 1);
-        emit!(self, "s32i a0, a1, {}", a0_offset)?;
+        emit!(self, "s32i", "a0, a1, {}", a0_offset)?;
 
         // Se copian argumentos de registros a locales
         for (register, local) in Reg::argument_sequence().zip(0..self.function.parameters) {
@@ -115,7 +115,7 @@ impl<W: Write> XtensaFunction<'_, W> {
 
         // Epílogo, revierte al estado justo antes de la llamada
         self.move_sp(self.frame_offset)?;
-        emit!(self, "l32i a0, a1, -4")?;
+        emit!(self, "l32i", "a0, a1, -4")?;
         emit!(self, "ret.n")
     }
 
@@ -126,18 +126,18 @@ impl<W: Write> XtensaFunction<'_, W> {
             Label(label) => emit_label(self.output, self.function, *label),
 
             Jump(label) => {
-                emit!(self, "j.l {}, a2", label_symbol(self.function, *label))
+                emit!(self, "j.l", "{}, a2", label_symbol(self.function, *label))
             }
 
             JumpIfFalse(local, label) => {
                 self.local_to_register(*local, Reg::A2)?;
-                emit!(self, "bnez a2, {}", label_symbol(self.function, *label))
+                emit!(self, "bnez", "a2, {}", label_symbol(self.function, *label))
             }
 
             LoadGlobal(global, local) => {
                 let Global(global) = global.deref();
-                emit!(self, "movi a2, {}", global)?;
-                emit!(self, "l32i a2, a2, 0")?;
+                emit!(self, "movi", "a2, {}", global)?;
+                emit!(self, "l32i", "a2, a2, 0")?;
                 self.register_to_local(Reg::A2, *local)
             }
 
@@ -145,8 +145,8 @@ impl<W: Write> XtensaFunction<'_, W> {
                 let Global(global) = global.deref();
                 self.local_to_register(*local, Reg::A2)?;
 
-                emit!(self, "movi a3, {}", global)?;
-                emit!(self, "s32i a2, a3, 0")
+                emit!(self, "movi", "a3, {}", global)?;
+                emit!(self, "s32i", "a2, a3, 0")
             }
 
             Call {
@@ -168,7 +168,7 @@ impl<W: Write> XtensaFunction<'_, W> {
             self.local_to_register(*argument, Reg::A2)?;
 
             let offset = i as u32 * VALUE_SIZE;
-            emit!(self, "s32i a2, a1, {}", offset)?;
+            emit!(self, "s32i", "a2, a1, {}", offset)?;
         }
 
         // Los primeros seis argumentos se colocan en registros específicos
@@ -176,7 +176,7 @@ impl<W: Write> XtensaFunction<'_, W> {
             self.local_to_register(*argument, register)?;
         }
 
-        emit!(self, "call0 {}", target.name)?;
+        emit!(self, "call0", "{}", target.name)?;
         if let Some(output_local) = output_local {
             self.register_to_local(Reg::A2, output_local)?;
         }
@@ -194,12 +194,12 @@ impl<W: Write> XtensaFunction<'_, W> {
 
     fn load_or_store(&mut self, register: Reg, local: Local, instruction: &str) -> io::Result<()> {
         let address = self.local_address(local);
-        emit!(self, "{} {}, {}", instruction, register, address)
+        emit!(self, instruction, "{}, {}", register, address)
     }
 
     fn move_sp(&mut self, offset: i32) -> io::Result<()> {
         self.frame_offset -= offset;
-        emit!(self, "addi a1, a1, {}", offset * VALUE_SIZE as i32)
+        emit!(self, "addi", "a1, a1, {}", offset * VALUE_SIZE as i32)
     }
 
     fn local_address(&self, Local(local): Local) -> String {
