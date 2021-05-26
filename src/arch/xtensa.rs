@@ -1,8 +1,11 @@
 //! Manual de ISA: https://0x04.net/~mwk/doc/xtensa.pdf
 //! La ABI call0 está documentada en 8.1.2
 
-use super::{emit_label, label_symbol};
-use crate::ir::{Function, FunctionBody, Global, Instruction, Local};
+use crate::{
+    codegen::{emit_label, label_symbol},
+    ir::{Function, FunctionBody, Global, Instruction, Local},
+};
+
 use std::{
     fmt,
     io::{self, Write},
@@ -10,20 +13,28 @@ use std::{
 };
 
 // Esta es una arquitectura de 32 bits
-pub const VALUE_SIZE: u32 = 4;
+const VALUE_SIZE: u32 = 4;
 
-pub fn emit_function<W: Write>(output: &mut W, function: &Function) -> io::Result<()> {
-    let xtensa_function = XtensaFunction {
-        output,
-        function,
-        frame_offset: 0,
-    };
+pub struct Target;
 
-    xtensa_function.write_asm()
+impl super::Target for Target {
+    const VALUE_SIZE: u32 = VALUE_SIZE;
+
+    type Register = Reg;
+
+    fn emit_function<W: Write>(output: &mut W, function: &Function) -> io::Result<()> {
+        let xtensa_function = XtensaFunction {
+            output,
+            function,
+            frame_offset: 0,
+        };
+
+        xtensa_function.write_asm()
+    }
 }
 
 #[derive(Copy, Clone)]
-struct Reg(u8);
+pub struct Reg(u8);
 
 impl Reg {
     // En call0 se colocan los primeros 6 argumentos en a2-a7
@@ -35,6 +46,8 @@ impl Reg {
         (2..=7).map(Reg)
     }
 }
+
+impl super::Register for Reg {}
 
 impl fmt::Display for Reg {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {

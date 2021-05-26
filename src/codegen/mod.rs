@@ -1,21 +1,15 @@
-use crate::ir::{Function, FunctionBody, Global, Label, Program};
+use crate::{
+    arch::Arch,
+    ir::{Function, FunctionBody, Global, Label, Program},
+};
+
 use std::{
     io::{self, Write},
     ops::Deref,
 };
 
-pub enum Architecture {
-    X86_64,
-    Xtensa,
-}
-
-pub fn write<W: Write>(program: &Program, arch: Architecture, output: &mut W) -> io::Result<()> {
-    use Architecture::*;
-
-    let value_size = match arch {
-        X86_64 => x86_64::VALUE_SIZE,
-        Xtensa => xtensa::VALUE_SIZE,
-    };
+pub fn emit_asm<W: Write>(program: &Program, arch: Arch, output: &mut W) -> io::Result<()> {
+    let value_size = dispatch_arch!(Target: arch => Target::VALUE_SIZE);
 
     for global in &program.globals {
         let Global(name) = global.deref();
@@ -26,27 +20,14 @@ pub fn write<W: Write>(program: &Program, arch: Architecture, output: &mut W) ->
 
     for function in &program.code {
         if let FunctionBody::Generated { .. } = function.body {
-            match arch {
-                X86_64 => x86_64::emit_function(output, function)?,
-                Xtensa => xtensa::emit_function(output, function)?,
-            }
+            dispatch_arch!(Target: arch => Target::emit_function(output, function))?;
         }
     }
 
     Ok(())
 }
 
-macro_rules! emit {
-    ($self:expr, $($format:tt)*) => {{
-        write!($self.output, "\t")?;
-        writeln!($self.output, $($format)*)
-    }};
-}
-
-mod x86_64;
-mod xtensa;
-
-fn emit_label<W: Write>(
+pub fn emit_label<W: Write>(
     output: &mut W,
     function: &Function,
     Label(label): Label,
@@ -54,6 +35,6 @@ fn emit_label<W: Write>(
     writeln!(output, "\t.L{}.{}:", function.name, label)
 }
 
-fn label_symbol(function: &Function, Label(label): Label) -> String {
+pub fn label_symbol(function: &Function, Label(label): Label) -> String {
     format!(".L{}.{}", function.name, label)
 }

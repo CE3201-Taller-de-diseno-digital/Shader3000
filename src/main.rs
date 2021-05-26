@@ -1,11 +1,11 @@
 use anyhow::{self, Context};
 use clap::{self, crate_version, Arg};
 use compiler::{
-    codegen::{self, Architecture},
     ir::*,
+    target::{self, Arch},
 };
 
-use std::{fs::File, rc::Rc};
+use std::{fs::File, rc::Rc, str::FromStr};
 
 fn main() -> anyhow::Result<()> {
     let args = clap::App::new("AnimationLed compiler")
@@ -29,23 +29,20 @@ fn main() -> anyhow::Result<()> {
         .get_matches();
 
     let program = test_program();
-    let arch = match args.value_of("target").unwrap() {
-        "x86_64" => Architecture::X86_64,
-        "xtensa" => Architecture::Xtensa,
-        _ => unreachable!(),
-    };
+    let arch =
+        Arch::from_str(&args.value_of("target").unwrap()).expect("main.rs allowed a bad target");
 
     let result = match args.value_of("output").unwrap() {
         "-" => {
             let mut stdout = std::io::stdout();
-            codegen::write(&program, arch, &mut stdout)
+            target::emit_asm(&program, arch, &mut stdout)
         }
 
         path => {
             let mut file = File::create(path)
                 .with_context(|| format!("Failed to open for writing: {}", path))?;
 
-            codegen::write(&program, arch, &mut file)
+            target::emit_asm(&program, arch, &mut file)
         }
     };
 

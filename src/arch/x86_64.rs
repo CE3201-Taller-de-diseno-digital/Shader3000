@@ -1,5 +1,8 @@
-use super::{emit_label, label_symbol};
-use crate::ir::{Function, FunctionBody, Global, Instruction, Local};
+use crate::{
+    codegen::{emit_label, label_symbol},
+    ir::{Function, FunctionBody, Global, Instruction, Local},
+};
+
 use std::{
     fmt,
     io::{self, Write},
@@ -7,15 +10,23 @@ use std::{
 };
 
 // Esta es una arquitectura de 64 bits
-pub const VALUE_SIZE: u32 = 8;
+const VALUE_SIZE: u32 = 8;
 
-pub fn emit_function<W: Write>(output: &mut W, function: &Function) -> io::Result<()> {
-    let x86_function = X86Function { output, function };
-    x86_function.write_asm()
+pub struct Target;
+
+impl super::Target for Target {
+    const VALUE_SIZE: u32 = VALUE_SIZE;
+
+    type Register = Reg;
+
+    fn emit_function<W: Write>(output: &mut W, function: &Function) -> io::Result<()> {
+        let x86_function = X86Function { output, function };
+        x86_function.write_asm()
+    }
 }
 
 #[derive(Copy, Clone)]
-enum Reg {
+pub enum Reg {
     Rax,
     Rcx,
     Rdx,
@@ -44,6 +55,8 @@ impl Reg {
         })
     }
 }
+
+impl super::Register for Reg {}
 
 impl fmt::Display for Reg {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
