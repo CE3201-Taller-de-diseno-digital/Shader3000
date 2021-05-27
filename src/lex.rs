@@ -144,7 +144,10 @@ impl<S: InputStream> Lexer<S> {
         }
     }
 
-    pub fn try_exhaustive(mut self) -> Result<Vec<Located<Token>>, Vec<Located<LexerError>>> {
+    pub fn try_exhaustive(
+        mut self,
+    ) -> Result<impl Iterator<Item = Located<Token>>, impl Iterator<Item = Located<LexerError>>>
+    {
         let mut tokens = Vec::new();
 
         while let Some(result) = self.next() {
@@ -156,12 +159,12 @@ impl<S: InputStream> Lexer<S> {
                     let mut errors = vec![error];
                     errors.extend(self.filter_map(Result::err));
 
-                    return Err(errors);
+                    return Err(errors.into_iter());
                 }
             }
         }
 
-        Ok(tokens)
+        Ok(tokens.into_iter())
     }
 
     fn lex(&mut self) -> Result<Option<Token>, LexerError> {
