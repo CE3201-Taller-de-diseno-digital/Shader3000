@@ -1,6 +1,6 @@
 macro_rules! dispatch_arch {
     ($type:ident: $arch:expr => $expr:expr) => {{
-        use crate::arch::{Arch, Target, Xtensa, X86_64};
+        use crate::arch::{Arch, Xtensa, X86_64};
 
         match $arch {
             Arch::X86_64 => {
@@ -17,12 +17,12 @@ macro_rules! dispatch_arch {
 }
 
 macro_rules! emit {
-    ($self:expr, $opcode:expr) => {
-        writeln!($self.output, "\t{}", $opcode)
+    ($context:expr, $opcode:expr) => {
+        writeln!($context.output(), "\t{}", $opcode)
     };
 
-    ($self:expr, $opcode:expr, $($format:tt)*) => {{
-        write!($self.output, "\t{:8}", $opcode)?;
-        writeln!($self.output, $($format)*)
+    ($context:expr, $opcode:expr, $($format:tt)*) => {{
+        write!($context.output(), "\t{:8}", $opcode)?;
+        writeln!($context.output(), $($format)*)
     }};
 }

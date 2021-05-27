@@ -77,33 +77,30 @@ fn test_program() -> Program {
     let user_main = Rc::new(Function {
         name: String::from("user_main"),
         parameters: 0,
-        body: FunctionBody::Generated {
-            inner_locals: 1,
-            instructions: vec![
-                Instruction::Call {
-                    target: Rc::clone(&builtin_zero),
-                    arguments: vec![],
-                    output: Some(Local(0)),
-                },
-                Instruction::Label(Label(0)),
-                Instruction::Call {
-                    target: Rc::clone(&builtin_inc),
-                    arguments: vec![Local(0)],
-                    output: Some(Local(0)),
-                },
-                Instruction::Call {
-                    target: Rc::clone(&builtin_debug),
-                    arguments: vec![Local(0)],
-                    output: None,
-                },
-                Instruction::Call {
-                    target: Rc::clone(&builtin_delay_seg),
-                    arguments: vec![Local(0)],
-                    output: None,
-                },
-                Instruction::Jump(Label(0)),
-            ],
-        },
+        body: FunctionBody::Generated(vec![
+            Instruction::Call {
+                target: Rc::clone(&builtin_zero),
+                arguments: vec![],
+                output: Some(Local(0)),
+            },
+            Instruction::SetLabel(Label(0)),
+            Instruction::Call {
+                target: Rc::clone(&builtin_inc),
+                arguments: vec![Local(0)],
+                output: Some(Local(0)),
+            },
+            Instruction::Call {
+                target: Rc::clone(&builtin_debug),
+                arguments: vec![Local(0)],
+                output: None,
+            },
+            Instruction::Call {
+                target: Rc::clone(&builtin_delay_seg),
+                arguments: vec![Local(0)],
+                output: None,
+            },
+            Instruction::Jump(Label(0)),
+        ]),
     });
 
     Program {
