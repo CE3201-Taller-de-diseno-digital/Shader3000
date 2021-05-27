@@ -35,14 +35,14 @@ fn main() -> anyhow::Result<()> {
     let result = match args.value_of("output").unwrap() {
         "-" => {
             let mut stdout = std::io::stdout();
-            target::emit_asm(&program, arch, &mut stdout)
+            target::emit(&program, arch, &mut stdout)
         }
 
         path => {
             let mut file = File::create(path)
                 .with_context(|| format!("Failed to open for writing: {}", path))?;
 
-            target::emit_asm(&program, arch, &mut file)
+            target::emit(&program, arch, &mut file)
         }
     };
 

@@ -13,5 +13,5 @@ mod codegen;
 
 pub mod target {
     pub use crate::arch::Arch;
-    pub use crate::codegen::emit_asm;
+    pub use crate::codegen::emit;
 }

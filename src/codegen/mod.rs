@@ -8,7 +8,7 @@ use std::{
     ops::Deref,
 };
 
-pub fn emit_asm<W: Write>(program: &Program, arch: Arch, output: &mut W) -> io::Result<()> {
+pub fn emit<W: Write>(program: &Program, arch: Arch, output: &mut W) -> io::Result<()> {
     let value_size = dispatch_arch!(Target: arch => Target::VALUE_SIZE);
 
     for global in &program.globals {
