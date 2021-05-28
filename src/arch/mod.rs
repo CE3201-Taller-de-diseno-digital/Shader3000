@@ -3,7 +3,7 @@ use crate::{
     ir::{Function, Global, Instruction, Local},
 };
 
-use std::io::{self, Write};
+use std::io;
 
 #[derive(Copy, Clone)]
 pub enum Arch {
@@ -14,48 +14,30 @@ pub enum Arch {
 mod x86_64;
 mod xtensa;
 
-pub use x86_64::Target as X86_64;
-pub use xtensa::Target as Xtensa;
+pub use x86_64::Emitter as X86_64;
+pub use xtensa::Emitter as Xtensa;
 
-pub trait Target {
+pub trait Emitter<'a>: Sized {
     const VALUE_SIZE: u32;
 
-    type Emitter: Emitter;
     type Register: Register;
-}
 
-pub trait Emitter {
-    fn new(instructions: &[Instruction]) -> Self;
+    fn new(cx: Context<'a, Self>, instructions: &[Instruction]) -> io::Result<Self>;
 
-    fn prologue<W: Write>(&mut self, cx: &mut Context<W>) -> io::Result<()>;
-    fn epilogue<W: Write>(&mut self, cx: &mut Context<W>) -> io::Result<()>;
+    fn epilogue(self) -> io::Result<()>;
 
-    fn jump_unconditional<W: Write>(&mut self, cx: &mut Context<W>, label: &str) -> io::Result<()>;
+    fn cx(&mut self) -> &mut Context<'a, Self>;
 
-    fn jump_if_false<W: Write>(
+    fn jump_unconditional(&mut self, label: &str) -> io::Result<()>;
+
+    fn jump_if_false(&mut self, local: Local, label: &str) -> io::Result<()>;
+
+    fn load_global(&mut self, global: &Global, local: Local) -> io::Result<()>;
+
+    fn store_global(&mut self, local: Local, global: &Global) -> io::Result<()>;
+
+    fn call(
         &mut self,
-        cx: &mut Context<W>,
-        local: Local,
-        label: &str,
-    ) -> io::Result<()>;
-
-    fn load_global<W: Write>(
-        &mut self,
-        cx: &mut Context<W>,
-        global: &Global,
-        local: Local,
-    ) -> io::Result<()>;
-
-    fn store_global<W: Write>(
-        &mut self,
-        cx: &mut Context<W>,
-        local: Local,
-        global: &Global,
-    ) -> io::Result<()>;
-
-    fn call<W: Write>(
-        &mut self,
-        cx: &mut Context<W>,
         target: &Function,
         arguments: &[Local],
         output: Option<Local>,
