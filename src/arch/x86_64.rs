@@ -1,21 +1,15 @@
-use super::{emit_label, label_symbol};
-use crate::ir::{Function, FunctionBody, Global, Instruction, Local};
-use std::{
-    fmt,
-    io::{self, Write},
-    ops::Deref,
+use crate::{
+    codegen::Context,
+    ir::{Function, Global, Instruction, Local},
 };
 
-// Esta es una arquitectura de 64 bits
-pub const VALUE_SIZE: u32 = 8;
+use std::{fmt, io};
 
-pub fn emit_function<W: Write>(output: &mut W, function: &Function) -> io::Result<()> {
-    let x86_function = X86Function { output, function };
-    x86_function.write_asm()
-}
+// Esta es una arquitectura de 64 bits
+const VALUE_SIZE: u32 = 8;
 
 #[derive(Copy, Clone)]
-enum Reg {
+pub enum Reg {
     Rax,
     Rcx,
     Rdx,
@@ -45,6 +39,8 @@ impl Reg {
     }
 }
 
+impl super::Register for Reg {}
+
 impl fmt::Display for Reg {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         use Reg::*;
@@ -63,80 +59,68 @@ impl fmt::Display for Reg {
     }
 }
 
-struct X86Function<'a, W> {
-    output: &'a mut W,
-    function: &'a Function,
+pub struct Emitter<'a> {
+    cx: Context<'a, Self>,
 }
 
-impl<W: Write> X86Function<'_, W> {
-    fn write_asm(mut self) -> io::Result<()> {
-        writeln!(self.output, "{}:", self.function.name)?;
+impl<'a> super::Emitter<'a> for Emitter<'a> {
+    const VALUE_SIZE: u32 = VALUE_SIZE;
 
-        let (inner_locals, instructions) = match &self.function.body {
-            FunctionBody::Generated {
-                inner_locals,
-                instructions,
-            } => (inner_locals, instructions),
-            _ => return Ok(()),
-        };
+    type Register = Reg;
 
-        // Prólogo, crea un stack frame
-        emit!(self, "push %rbp")?;
-        emit!(self, "mov %rsp, %rbp")?;
+    fn new(mut cx: Context<'a, Self>, _: &[Instruction]) -> io::Result<Self> {
+        // Prólogo, se crea un stack frame
+        emit!(cx, "push", "%rbp")?;
+        emit!(cx, "mov", "%rsp, %rbp")?;
 
         // Se reserva memoria para locales
-        let total_locals = self.function.parameters + inner_locals;
+        let total_locals = cx.agnostic_locals();
         let stack_allocation = total_locals + alignment_for(total_locals);
+
+        let mut emitter = Emitter { cx };
+
         if stack_allocation > 0 {
-            self.move_rsp(-(stack_allocation as i32))?;
+            emitter.move_rsp(-(stack_allocation as i32))?;
         }
 
         // Se copian argumentos de registros a locales
-        for (register, local) in Reg::argument_sequence().zip(0..self.function.parameters) {
-            self.register_to_local(register, Local(local))?;
+        let parameters = emitter.cx.function().parameters;
+        for (register, local) in Reg::argument_sequence().zip(0..parameters) {
+            emitter.register_to_local(register, Local(local))?;
         }
 
-        // Se emite el cuerpo de la función
-        for instruction in instructions {
-            self.put_instruction(instruction)?;
-        }
-
-        // Epílogo, revierte al estado justo antes de la llamada
-        emit!(self, "mov %rbp, %rsp")?;
-        emit!(self, "pop %rbp")?;
-        emit!(self, "ret")
+        Ok(emitter)
     }
 
-    fn put_instruction(&mut self, instruction: &Instruction) -> io::Result<()> {
-        use Instruction::*;
+    fn cx(&mut self) -> &mut Context<'a, Self> {
+        &mut self.cx
+    }
 
-        match instruction {
-            Label(label) => emit_label(self.output, self.function, *label),
-            Jump(label) => emit!(self, "jmp {}", label_symbol(self.function, *label)),
-            JumpIfFalse(local, label) => {
-                self.local_to_register(*local, Reg::Rax)?;
-                emit!(self, "testl %eax, %eax")?;
-                emit!(self, "jz {}", label_symbol(self.function, *label))
-            }
+    fn epilogue(mut self) -> io::Result<()> {
+        // Revierte al estado justo antes de la llamada
+        emit!(self.cx, "mov", "%rbp, %rsp")?;
+        emit!(self.cx, "pop", "%rbp")?;
+        emit!(self.cx, "ret")
+    }
 
-            LoadGlobal(global, local) => {
-                let Global(global) = global.deref();
-                emit!(self, "mov {}(%rip), %rax", global)?;
-                self.register_to_local(Reg::Rax, *local)
-            }
+    fn jump_unconditional(&mut self, label: &str) -> io::Result<()> {
+        emit!(self.cx, "jmp", "{}", label)
+    }
 
-            StoreGlobal(local, global) => {
-                let Global(global) = global.deref();
-                self.local_to_register(*local, Reg::Rax)?;
-                emit!(self, "mov %rax, {}(%rip)", global)
-            }
+    fn jump_if_false(&mut self, local: Local, label: &str) -> io::Result<()> {
+        self.local_to_register(local, Reg::Rax)?;
+        emit!(self.cx, "testl", "%eax, %eax")?;
+        emit!(self.cx, "jz", "{}", label)
+    }
 
-            Call {
-                target,
-                arguments,
-                output: output_local,
-            } => self.call(&target, &arguments, *output_local),
-        }
+    fn load_global(&mut self, Global(global): &Global, local: Local) -> io::Result<()> {
+        emit!(self.cx, "mov", "{}(%rip), %rax", global)?;
+        self.register_to_local(Reg::Rax, local)
+    }
+
+    fn store_global(&mut self, local: Local, Global(global): &Global) -> io::Result<()> {
+        self.local_to_register(local, Reg::Rax)?;
+        emit!(self.cx, "mov", "%rax, {}(%rip)", global)
     }
 
     fn call(
@@ -148,7 +132,8 @@ impl<W: Write> X86Function<'_, W> {
         // Argumentos del séptimo en adelante se colocan en stack en orden inverso
         let pushed = (arguments.len() as u32).max(Reg::MAX_ARGS) - Reg::MAX_ARGS;
         for argument in arguments.iter().rev().take(pushed as usize) {
-            emit!(self, "push {}", self.local_address(*argument))?;
+            let address = self.local_address(*argument);
+            emit!(self.cx, "push", "{}", address)?;
         }
 
         // Los primeros seis argumentos se colocan en registros específicos
@@ -168,7 +153,7 @@ impl<W: Write> X86Function<'_, W> {
             0
         };
 
-        emit!(self, "call {}", target.name)?;
+        emit!(self.cx, "call", "{}", target.name)?;
         if let Some(output_local) = output_local {
             self.register_to_local(Reg::Rax, output_local)?;
         }
@@ -180,23 +165,27 @@ impl<W: Write> X86Function<'_, W> {
 
         Ok(())
     }
+}
 
+impl Emitter<'_> {
     fn local_to_register(&mut self, local: Local, register: Reg) -> io::Result<()> {
-        emit!(self, "mov {}, %{}", self.local_address(local), register)
+        let address = self.local_address(local);
+        emit!(self.cx, "mov", "{}, %{}", address, register)
     }
 
     fn register_to_local(&mut self, register: Reg, local: Local) -> io::Result<()> {
-        emit!(self, "mov %{}, {}", register, self.local_address(local))
+        let address = self.local_address(local);
+        emit!(self.cx, "mov", "%{}, {}", register, address)
     }
 
     fn move_rsp(&mut self, offset: i32) -> io::Result<()> {
         let instruction = if offset < 0 { "subq" } else { "addq" };
         let offset = offset.abs() * VALUE_SIZE as i32;
-        emit!(self, "{} $0x{:x}, %rsp", instruction, offset)
+        emit!(self.cx, instruction, "$0x{:x}, %rsp", offset)
     }
 
     fn local_address(&self, Local(local): Local) -> String {
-        let parameters = self.function.parameters;
+        let parameters = self.cx.function().parameters;
         let value_offset = if local < Reg::MAX_ARGS || parameters < Reg::MAX_ARGS {
             -1 - local as i32
         } else if local < parameters {

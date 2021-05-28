@@ -10,16 +10,16 @@ pub enum LexerError {
     #[error("I/O error")]
     Input(#[from] std::io::Error),
 
-    #[error("bad character {0:?} in input stream")]
+    #[error("Bad character {0:?} in input stream")]
     BadChar(char),
 
-    #[error("expected {0:?}")]
+    #[error("Expected {0:?}")]
     Expected(char),
 
-    #[error("bad escape sequence")]
+    #[error("Bad escape sequence")]
     BadEscape,
 
-    #[error("unterminated string literal")]
+    #[error("Unterminated string literal")]
     UnterminatedString,
 
     #[error("identifier exceeds {MAX_ID_LENGTH} characters")]
@@ -119,7 +119,7 @@ pub struct Lexer<S: Iterator> {
 
 enum State {
     Start,
-    Terminate,
+    Error,
     Complete(Token),
     Hash,
     Star,
@@ -144,6 +144,29 @@ impl<S: InputStream> Lexer<S> {
         }
     }
 
+    pub fn try_exhaustive(
+        mut self,
+    ) -> Result<impl Iterator<Item = Located<Token>>, impl Iterator<Item = Located<LexerError>>>
+    {
+        let mut tokens = Vec::new();
+
+        while let Some(result) = self.next() {
+            match result {
+                Ok(token) => tokens.push(token),
+                Err(error) => {
+                    drop(tokens);
+
+                    let mut errors = vec![error];
+                    errors.extend(self.filter_map(Result::err));
+
+                    return Err(errors.into_iter());
+                }
+            }
+        }
+
+        Ok(tokens.into_iter())
+    }
+
     fn lex(&mut self) -> Result<Option<Token>, LexerError> {
         use {State::*, Token::*};
 
@@ -155,13 +178,11 @@ impl<S: InputStream> Lexer<S> {
             };
 
             match (&mut self.state, next_char) {
-                (Terminate, _) => return Ok(None),
+                (Error, None) => return Ok(None),
+                (Error, Some('\n')) => self.state = Start,
+                (Error, Some(_)) => (),
 
-                (Start, None) => {
-                    self.state = Terminate;
-                    return Ok(None);
-                }
-
+                (Start, None) => return Ok(None),
                 (Start, Some(',')) => self.state = Complete(Comma),
                 (Start, Some('+')) => self.state = Complete(Plus),
                 (Start, Some('-')) => self.state = Complete(Minus),
@@ -279,7 +300,7 @@ impl<S: InputStream> Iterator for Lexer<S> {
             }
 
             Err(error) => {
-                self.state = State::Terminate;
+                self.state = State::Error;
 
                 let range = self.next..self.next.advance();
                 Some(Err(Located::at(error, self.from.clone(), range)))

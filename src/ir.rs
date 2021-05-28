@@ -13,10 +13,7 @@ pub struct Function {
 
 pub enum FunctionBody {
     External,
-    Generated {
-        inner_locals: u32,
-        instructions: Vec<Instruction>,
-    },
+    Generated(Vec<Instruction>),
 }
 
 #[derive(Copy, Clone)]
@@ -28,7 +25,7 @@ pub struct Local(pub u32);
 pub struct Global(pub String);
 
 pub enum Instruction {
-    Label(Label),
+    SetLabel(Label),
     Jump(Label),
     JumpIfFalse(Local, Label),
     LoadGlobal(Rc<Global>, Local),
