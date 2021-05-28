@@ -1,4 +1,4 @@
-//! Manual de ISA: https://0x04.net/~mwk/doc/xtensa.pdf
+//! Manual de ISA: <https://0x04.net/~mwk/doc/xtensa.pdf>.
 //! La ABI call0 está documentada en 8.1.2
 
 use crate::{
