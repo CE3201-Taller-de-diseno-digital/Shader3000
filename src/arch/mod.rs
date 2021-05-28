@@ -3,27 +3,12 @@ use crate::{
     ir::{Function, Global, Instruction, Local},
 };
 
-use std::{
-    io::{self, Write},
-    str::FromStr,
-};
+use std::io::{self, Write};
 
 #[derive(Copy, Clone)]
 pub enum Arch {
     X86_64,
     Xtensa,
-}
-
-impl FromStr for Arch {
-    type Err = ();
-
-    fn from_str(string: &str) -> Result<Self, Self::Err> {
-        match string {
-            "x86_64" => Ok(Arch::X86_64),
-            "xtensa" => Ok(Arch::Xtensa),
-            _ => Err(()),
-        }
-    }
 }
 
 mod x86_64;

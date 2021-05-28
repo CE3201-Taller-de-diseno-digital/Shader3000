@@ -5,6 +5,7 @@ mod macros;
 
 pub mod ir;
 pub mod lex;
+pub mod link;
 pub mod parse;
 pub mod source;
 

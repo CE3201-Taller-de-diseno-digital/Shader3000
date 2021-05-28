@@ -10,16 +10,16 @@ pub enum LexerError {
     #[error("I/O error")]
     Input(#[from] std::io::Error),
 
-    #[error("bad character {0:?} in input stream")]
+    #[error("Bad character {0:?} in input stream")]
     BadChar(char),
 
-    #[error("expected {0:?}")]
+    #[error("Expected {0:?}")]
     Expected(char),
 
-    #[error("bad escape sequence")]
+    #[error("Bad escape sequence")]
     BadEscape,
 
-    #[error("unterminated string literal")]
+    #[error("Unterminated string literal")]
     UnterminatedString,
 
     #[error("identifier exceeds {MAX_ID_LENGTH} characters")]

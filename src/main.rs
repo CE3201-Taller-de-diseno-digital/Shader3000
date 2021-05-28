@@ -2,7 +2,8 @@ use anyhow::{self, Context};
 use clap::{self, crate_version, Arg};
 use compiler::{
     ir::*,
-    target::{self, Arch},
+    link::{Linker, Platform},
+    target,
 };
 
 use std::{fs::File, rc::Rc, str::FromStr};
@@ -13,40 +14,62 @@ fn main() -> anyhow::Result<()> {
         .arg(
             Arg::new("target")
                 .short('t')
-                .value_name("ARCH")
+                .long("target")
+                .value_name("PLATFORM")
                 .takes_value(true)
-                .default_value("x86_64")
-                .possible_values(&["x86_64", "xtensa"])
-                .about("Target architecture"),
+                .default_value("native")
+                .possible_values(&["native", "esp8266"])
+                .about("Target platform"),
+        )
+        .arg(
+            Arg::new("asm")
+                .short('S')
+                .about("Generate assembly instead of linking"),
         )
         .arg(
             Arg::new("output")
                 .short('o')
                 .takes_value(true)
                 .required(true)
-                .about("Output file ('-' for stdout)"),
+                .value_name("FILE")
+                .about("Output file ('-' along with -S for stdout)"),
         )
         .get_matches();
 
-    let program = test_program();
-    let arch =
-        Arch::from_str(&args.value_of("target").unwrap()).expect("main.rs allowed a bad target");
+    let platform = args.value_of("target").unwrap();
+    let platform = Platform::from_str(&platform).expect("main.rs allowed a bad target");
+    let arch = platform.arch();
 
-    let result = match args.value_of("output").unwrap() {
-        "-" => {
+    let asm = args.is_present("asm");
+    let output = args.value_of("output").unwrap();
+
+    let program = test_program();
+    match (asm, output) {
+        (true, "-") => {
             let mut stdout = std::io::stdout();
-            target::emit(&program, arch, &mut stdout)
+            target::emit(&program, arch, &mut stdout).context("Failed to emit to stdin")?;
         }
 
-        path => {
+        (true, path) => {
             let mut file = File::create(path)
                 .with_context(|| format!("Failed to open for writing: {}", path))?;
 
             target::emit(&program, arch, &mut file)
+                .with_context(|| format!("Failed to emit to file: {}", path))?;
+        }
+
+        (false, path) => {
+            let mut linker = Linker::spawn(platform, &path).context("Failed to link")?;
+            target::emit(&program, arch, linker.stdin())
+                .context("Failed to emit through linker")?;
+
+            linker
+                .finish()
+                .with_context(|| format!("Failed to generate executable: {}", path))?;
         }
     };
 
-    result.context("Failed to emit generated code").into()
+    Ok(())
 }
 
 fn test_program() -> Program {
