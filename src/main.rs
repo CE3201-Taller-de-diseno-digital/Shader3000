@@ -1,4 +1,4 @@
-use anyhow::{self, Context};
+use anyhow::{self, bail, Context};
 use clap::{self, crate_version, Arg};
 use compiler::{
     ir::*,
@@ -57,6 +57,8 @@ fn main() -> anyhow::Result<()> {
             target::emit(&program, arch, &mut file)
                 .with_context(|| format!("Failed to emit to file: {}", path))?;
         }
+
+        (false, "-") => bail!("Refusing to write executable to stdout"),
 
         (false, path) => {
             let mut linker = Linker::spawn(platform, &path).context("Failed to link")?;
