@@ -1,3 +1,5 @@
+//! Implementación para x86-64.
+
 use crate::{
     codegen::Context,
     ir::{Function, Global, Instruction, Local},
@@ -5,9 +7,10 @@ use crate::{
 
 use std::{fmt, io};
 
-// Esta es una arquitectura de 64 bits
+/// Esta es una arquitectura de 64 bits
 const VALUE_SIZE: u32 = 8;
 
+/// Registro de procesador.
 #[derive(Copy, Clone)]
 pub enum Reg {
     Rax,
@@ -20,11 +23,12 @@ pub enum Reg {
 }
 
 impl Reg {
-    /* La ABI indica que se coloquen los primeros 6 argumentos en los registros %rdi, %rsi, %rdx, %rcx,
-     * %r8 y %r9. Si hay más se ponen en el stack en orden inverso.
-     */
+    /// La ABI indica que se coloquen los primeros 6 argumentos en los
+    /// registros `%rdi`, `%rsi`, `%rdx`, `%rcx`, `%r8` y `%r9`. Si hay
+    /// más se ponen en el stack en orden inverso.
     const MAX_ARGS: u32 = 6;
 
+    /// Iterador sobre los registros donde se colocan los primeros argumentos.
     fn argument_sequence() -> impl Iterator<Item = Reg> {
         use Reg::*;
 
@@ -59,6 +63,7 @@ impl fmt::Display for Reg {
     }
 }
 
+/// Emisión de código para x86-64.
 pub struct Emitter<'a> {
     cx: Context<'a, Self>,
 }
@@ -173,22 +178,26 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
 }
 
 impl Emitter<'_> {
+    /// Copia los contenidos de una local a un registro.
     fn local_to_register(&mut self, local: Local, register: Reg) -> io::Result<()> {
         let address = self.local_address(local);
         emit!(self.cx, "mov", "{}, %{}", address, register)
     }
 
+    /// Copia los contenidos de un registro a una local.
     fn register_to_local(&mut self, register: Reg, local: Local) -> io::Result<()> {
         let address = self.local_address(local);
         emit!(self.cx, "mov", "%{}, {}", register, address)
     }
 
+    /// Agrega un offset al puntero de stack.
     fn move_rsp(&mut self, offset: i32) -> io::Result<()> {
         let instruction = if offset < 0 { "subq" } else { "addq" };
         let offset = offset.abs() * VALUE_SIZE as i32;
         emit!(self.cx, instruction, "$0x{:x}, %rsp", offset)
     }
 
+    /// Obtiene el addressing relativo a `%rbp` de una local.
     fn local_address(&self, Local(local): Local) -> String {
         let parameters = self.cx.function().parameters;
         let value_offset = if local < Reg::MAX_ARGS || parameters < Reg::MAX_ARGS {
@@ -199,12 +208,16 @@ impl Emitter<'_> {
             -1 - (Reg::MAX_ARGS + local - parameters) as i32
         };
 
+        // Los offsets son relativos al frame pointer %rbp
         let offset = value_offset * (VALUE_SIZE as i32);
         let sign = if offset < 0 { "-" } else { "" };
         format!("{}0x{:x}(%rbp)", sign, offset.abs())
     }
 }
 
+/// Calcula el padding de stack que se requiere para
+/// preservar las condiciones de alineamiento tras una
+/// operación de push o equivalente.
 fn alignment_for(pushed: u32) -> u32 {
     // Cada valor es de 64 bits (8 bytes), y la frontera de alineamiento es de 16 bytes
     pushed % 2

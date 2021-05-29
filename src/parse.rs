@@ -1,3 +1,5 @@
+//! Análisis sintáctico.
+
 use std::iter::Peekable;
 
 use crate::{
@@ -284,4 +286,3 @@ pub enum ParserError {
 //        Ok(Ast(procedures))
 //    }
 //}
-
