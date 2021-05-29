@@ -90,6 +90,7 @@ fn emit_body<'a, E: Emitter<'a>>(
                 emitter.jump_if_false(*local, &label)?;
             }
 
+            LoadConst(value, local) => emitter.load_const(*value, *local)?,
             LoadGlobal(global, local) => emitter.load_global(global, *local)?,
             StoreGlobal(local, global) => emitter.store_global(*local, global)?,
 
@@ -116,6 +117,7 @@ fn required_locals(instruction: &Instruction) -> u32 {
     let required = |Local(local)| local + 1;
     match instruction {
         JumpIfFalse(local, _) => required(*local),
+        LoadConst(_, local) => required(*local),
         LoadGlobal(_, local) => required(*local),
         StoreGlobal(local, _) => required(*local),
 

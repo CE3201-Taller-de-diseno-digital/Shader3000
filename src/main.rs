@@ -81,12 +81,6 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn test_program() -> Program {
-    let builtin_zero = Rc::new(Function {
-        name: String::from("builtin_zero"),
-        parameters: 0,
-        body: FunctionBody::External,
-    });
-
     let builtin_inc = Rc::new(Function {
         name: String::from("builtin_inc"),
         parameters: 1,
@@ -109,11 +103,7 @@ fn test_program() -> Program {
         name: String::from("user_main"),
         parameters: 0,
         body: FunctionBody::Generated(vec![
-            Instruction::Call {
-                target: Rc::clone(&builtin_zero),
-                arguments: vec![],
-                output: Some(Local(0)),
-            },
+            Instruction::LoadConst(0, Local(0)),
             Instruction::SetLabel(Label(0)),
             Instruction::Call {
                 target: Rc::clone(&builtin_inc),

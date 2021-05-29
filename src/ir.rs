@@ -28,6 +28,7 @@ pub enum Instruction {
     SetLabel(Label),
     Jump(Label),
     JumpIfFalse(Local, Label),
+    LoadConst(i32, Local),
     LoadGlobal(Rc<Global>, Local),
     StoreGlobal(Local, Rc<Global>),
     Call {

@@ -25,15 +25,12 @@ pub trait Emitter<'a>: Sized {
     fn new(cx: Context<'a, Self>, instructions: &[Instruction]) -> io::Result<Self>;
 
     fn epilogue(self) -> io::Result<()>;
-
     fn cx(&mut self) -> &mut Context<'a, Self>;
 
     fn jump_unconditional(&mut self, label: &str) -> io::Result<()>;
-
     fn jump_if_false(&mut self, local: Local, label: &str) -> io::Result<()>;
-
+    fn load_const(&mut self, value: i32, local: Local) -> io::Result<()>;
     fn load_global(&mut self, global: &Global, local: Local) -> io::Result<()>;
-
     fn store_global(&mut self, local: Local, global: &Global) -> io::Result<()>;
 
     fn call(

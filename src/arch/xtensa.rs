@@ -107,6 +107,11 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
         emit!(self.cx, "bnez", "a2, {}", label)
     }
 
+    fn load_const(&mut self, value: i32, local: Local) -> io::Result<()> {
+        emit!(self.cx, "movi", "a2, {}", value)?;
+        self.register_to_local(Reg::A2, local)
+    }
+
     fn load_global(&mut self, Global(global): &Global, local: Local) -> io::Result<()> {
         emit!(self.cx, "movi", "a2, {}", global)?;
         emit!(self.cx, "l32i", "a2, a2, 0")?;

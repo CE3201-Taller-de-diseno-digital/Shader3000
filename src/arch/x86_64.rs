@@ -113,6 +113,11 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
         emit!(self.cx, "jz", "{}", label)
     }
 
+    fn load_const(&mut self, value: i32, local: Local) -> io::Result<()> {
+        emit!(self.cx, "mov", "${}, %rax", value)?;
+        self.register_to_local(Reg::Rax, local)
+    }
+
     fn load_global(&mut self, Global(global): &Global, local: Local) -> io::Result<()> {
         emit!(self.cx, "mov", "{}(%rip), %rax", global)?;
         self.register_to_local(Reg::Rax, local)
