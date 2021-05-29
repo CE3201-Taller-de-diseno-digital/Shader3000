@@ -19,6 +19,7 @@ panic = "abort"
 
 [dependencies]
 anyhow = "1.0.40"
+bitflags = "1.2.1"
 clap = "^3.0.0-beta.2"
 thiserror = "1.0.23"
 unicase = "2.6.0"

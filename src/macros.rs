@@ -4,12 +4,12 @@ macro_rules! dispatch_arch {
 
         match $arch {
             Arch::X86_64 => {
-                type $type = X86_64;
+                type $type<'target> = X86_64<'target>;
                 $expr
             }
 
             Arch::Xtensa => {
-                type $type = Xtensa;
+                type $type<'target> = Xtensa<'target>;
                 $expr
             }
         }

@@ -1,8 +1,8 @@
-use anyhow::{self, Context};
+use anyhow::{self, bail, Context};
 use clap::{self, crate_version, Arg};
 use compiler::{
     ir::*,
-    link::{Linker, Platform},
+    link::{LinkOptions, Linker, Platform},
     target,
 };
 
@@ -26,6 +26,7 @@ fn main() -> anyhow::Result<()> {
                 .short('S')
                 .about("Generate assembly instead of linking"),
         )
+        .arg(Arg::new("strip").short('s').about("Strip executables"))
         .arg(
             Arg::new("output")
                 .short('o')
@@ -58,8 +59,15 @@ fn main() -> anyhow::Result<()> {
                 .with_context(|| format!("Failed to emit to file: {}", path))?;
         }
 
+        (false, "-") => bail!("Refusing to write executable to stdout"),
+
         (false, path) => {
-            let mut linker = Linker::spawn(platform, &path).context("Failed to link")?;
+            let mut options = LinkOptions::empty();
+            if args.is_present("strip") {
+                options |= LinkOptions::STRIP;
+            }
+
+            let mut linker = Linker::spawn(platform, &path, options).context("Failed to link")?;
             target::emit(&program, arch, linker.stdin())
                 .context("Failed to emit through linker")?;
 

@@ -5,7 +5,14 @@ use std::{
 };
 
 use crate::arch::Arch;
+use bitflags::bitflags;
 use thiserror::Error;
+
+bitflags! {
+    pub struct LinkOptions: u32 {
+        const STRIP = 0x01;
+    }
+}
 
 #[non_exhaustive]
 #[derive(Error, Debug)]
@@ -50,23 +57,30 @@ impl FromStr for Platform {
 pub struct Linker(Child);
 
 impl Linker {
-    pub fn spawn<O: AsRef<Path>>(platform: Platform, output: &O) -> Result<Linker, LinkerError> {
+    pub fn spawn<O>(platform: Platform, output: &O, opts: LinkOptions) -> Result<Self, LinkerError>
+    where
+        O: AsRef<Path>,
+    {
         let params = platform.link_params();
 
         let mut library_path: PathBuf = "lib".into();
         library_path.push(params.name);
 
-        Command::new(params.command)
+        let mut command = Command::new(params.command);
+        command
             .args(params.extra_args)
             .arg("-L")
             .arg(&library_path)
             .arg("-o")
             .arg(output.as_ref())
             .args(&["-Wl,--gc-sections", "-xassembler", "-", "-lruntime"])
-            .stdin(Stdio::piped())
-            .spawn()
-            .map(Linker)
-            .map_err(LinkerError::Io)
+            .stdin(Stdio::piped());
+
+        if opts.contains(LinkOptions::STRIP) {
+            command.arg("-s");
+        }
+
+        command.spawn().map(Linker).map_err(LinkerError::Io)
     }
 
     pub fn stdin(&mut self) -> &mut ChildStdin {

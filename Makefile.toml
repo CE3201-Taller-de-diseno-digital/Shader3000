@@ -1,0 +1,20 @@
+[config]
+default_to_workspace = false
+
+[tasks.build]
+args = ["build", "--release"]
+
+[tasks.test]
+disabled = true
+
+[tasks.dist-clean]
+script = "rm -rf target/release/dist target/release/dist.tar.gz"
+
+[tasks.dist]
+dependencies = ["build", "dist-clean"]
+script = "./dist.sh"
+
+[tasks.tarball]
+dependencies = ["dist"]
+command = "tar"
+args = ["cz", "-C", "target/release/dist", "-f", "target/release/dist.tar.gz", "."]
