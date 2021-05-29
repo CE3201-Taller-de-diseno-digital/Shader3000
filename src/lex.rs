@@ -29,10 +29,10 @@ pub enum LexerError {
     UppercaseId,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Identifier(String);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Token {
     Id(Identifier),
     Keyword(Keyword),

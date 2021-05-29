@@ -18,10 +18,10 @@ geometry: margin=1in
 fontsize: 12pt
 fontfamily: sans
 linestretch: 1.15
-bibliography: bibliografia.bib
+bibliography: doc/bibliografia.bib
 csl: /home/josfemova/UsefulRepos/styles/ieee.csl
 nocite: |
-  @lexyacc
+  @rust-gui, @gtk-rs ,@gtk-sourceview
 ...
 
 \maketitle

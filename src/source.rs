@@ -7,7 +7,7 @@ use std::{
 
 pub trait InputStream = Iterator<Item = Result<char, io::Error>>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Located<T> {
     location: Location,
     value: T,
@@ -20,8 +20,35 @@ impl<T> Located<T> {
             location: Location::new(from, position),
         }
     }
+    pub fn from_location(value:T,location: &Location)-> Self{
+        Located{
+            value: value,
+            location: location.clone()
+        }
+    }
+    pub fn from_one<U>(value:T, src: Located<U>)->Located<T>{
+        Located::at(value, src.location.from.clone(), src.location.position.clone())
+    }
+    pub fn from_two<U, V>(value: T, src_start: Located<U>, src_end: Located<V>) -> Located<T> {
+        Located::at(
+            value,
+            src_start.location.from.clone(),
+            src_start.location.position.start..src_end.location.position.end,
+        )
+    }
+    pub fn val(&self) -> &T {
+        &self.value
+    }
+    pub fn location(&self)-> &Location{
+        &self.location
+    }
 }
-
+impl<T> AsRef<T> for Located<T> {
+    fn as_ref(&self) -> &T {
+        &self.value
+    }
+}
+#[derive(Clone)]
 pub struct Location {
     from: SourceName,
     position: Range<Position>,
