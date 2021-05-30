@@ -5,11 +5,12 @@ extern crate gtk;
 use gio::prelude::*;
 use glib::clone;
 use gtk::prelude::*;
-
+use sourceview::*;
 use std::env::args;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
+use std::path::Path;
 use std::rc::Rc;
 
 fn main() {
@@ -76,8 +77,6 @@ fn build_ui(application: &gtk::Application) {
     //SourceView
     let sourceview: sourceview::View = builder.get_object("source").unwrap();
 
-    //let source : sourceview::Buffer = sourceview.get_buffer().unwrap();
-
     //Notebook
     let doc_name: gtk::Label = builder.get_object("doc_name").unwrap();
 
@@ -85,11 +84,15 @@ fn build_ui(application: &gtk::Application) {
     let left_tree: gtk::TreeView = builder.get_object("treeview").unwrap();
     let store = gtk::TreeStore::new(&[String::static_type()]);
     left_tree.set_model(Some(&store));
-
     //Create treeview elements
     left_tree.set_model(Some(&store));
     left_tree.set_headers_visible(true);
     append_text_column(&left_tree);
+
+    //File
+    //let mut current_file = "none";
+    let current_file = gtk::Label::new(Some("unnamed.txt"));
+    //let mut current_file = Rc::new(current_file);
 
     //               ___________________
     //______________/  Add funtionality
@@ -97,27 +100,29 @@ fn build_ui(application: &gtk::Application) {
     //TODO:comp_run
     //TODO:comp
 
-    let store = Rc::new(store);
-    let doc_name = Rc::new(doc_name);
+    //let store = Rc::new(store);
+    //let doc_name = Rc::new(doc_name);
 
-    new.connect_activate(clone!(@weak sourceview => move |_| {
+    new.connect_activate(
+        clone!(@weak sourceview , @weak doc_name, @weak current_file => move |_| {
 
-        sourceview
-            .get_buffer()
-            .expect("Couldn't get window")
-            .set_text("");
+            sourceview
+                .get_buffer()
+                .expect("Couldn't get window")
+                .set_text("");
 
-    }));
+            doc_name.set_text("unnamed");
 
-    new.connect_activate(clone!(@weak doc_name => move |_| {
+            current_file.set_text("unnamed.txt");
 
-        doc_name.set_text("Unnamed");
+        }),
+    );
 
-    }));
+    let sourceview2 = sourceview.clone();
+    let doc_name2 = doc_name.clone();
+    let current_file2 = current_file.clone();
 
     open.connect_activate(clone!(@weak window => move |_| {
-
-        let doc_name = Rc::clone(&doc_name);
 
         let file_chooser = gtk::FileChooserDialog::new(
             Some("Open File"),
@@ -128,7 +133,7 @@ fn build_ui(application: &gtk::Application) {
             ("Open", gtk::ResponseType::Ok),
             ("Cancel", gtk::ResponseType::Cancel),
         ]);
-        file_chooser.connect_response(clone!(@weak sourceview => move|file_chooser, response| {
+        file_chooser.connect_response(clone!(@weak sourceview2, @weak doc_name2 ,@weak current_file2=> move|file_chooser, response| {
             if response == gtk::ResponseType::Ok {
 
                 let filename = file_chooser.get_filename().expect("Couldn't get filename");
@@ -138,7 +143,7 @@ fn build_ui(application: &gtk::Application) {
                 let mut contents = String::new();
                 let _ = reader.read_to_string(&mut contents);
 
-                sourceview
+                sourceview2
                     .get_buffer()
                     .expect("Couldn't get window")
                     .set_text(&contents);
@@ -147,7 +152,8 @@ fn build_ui(application: &gtk::Application) {
                 match filename.to_str() {
                     None => panic!("new path is not a valid UTF-8 sequence"),
                     Some(name) => {  let chunks:Vec<&str> = name.split("/").collect();
-                                     doc_name.set_text(&chunks[chunks.len()-1]);
+                                     doc_name2.set_text(&chunks[chunks.len()-1]);
+                                     current_file2.set_text(name);
                                     }
                 }
             }
@@ -157,11 +163,11 @@ fn build_ui(application: &gtk::Application) {
         file_chooser.show_all();
     }));
 
-    let store = Rc::new(store);
+    //let store = Rc::new(store);
 
     open_folder.connect_activate(clone!(@weak window => move |_| {
 
-        let store = Rc::clone(&store);
+        //let store = Rc::clone(&store);
 
         let folder_chooser = gtk::FileChooserDialog::new(
             Some("Choose a file"), 
@@ -204,7 +210,42 @@ fn build_ui(application: &gtk::Application) {
         folder_chooser.show_all();
     }));
 
-    save.connect_activate(clone!(@weak window => move |_| {
+    let current_file4 = current_file.clone();
+
+    let sourceview4 = sourceview.clone();
+
+    save.connect_activate(clone!(@weak current_file4,@weak sourceview4  => move |_| {
+
+        let filename = current_file4.get_text();
+
+        let buffer = sourceview4.get_buffer().expect("Couldn't get window");
+
+        let bounds = buffer.get_bounds();
+
+        let text = buffer.get_text(&bounds.0,&bounds.1,true);
+
+        let path = Path::new(filename.as_str());
+        let display = path.display();
+
+        let mut file = match File::create(&path) {
+                Err(why) => panic!("couldn't create {}: {}", display, why),
+                Ok(file) => file,
+            };
+
+        match file.write_all(text.unwrap().as_str().as_bytes()) {
+                Err(why) => panic!("couldn't write to {}: {}", display, why),
+                Ok(_) => println!("successfully wrote to {}", display),
+            };
+
+    }));
+
+    let sourceview3 = sourceview.clone();
+
+    let doc_name3 = doc_name.clone();
+
+    let current_file3 = current_file.clone();
+
+    save_as.connect_activate(clone!(@weak window => move |_| {
 
         let file_chooser = gtk::FileChooserDialog::new(
             Some("Open File"),
@@ -218,20 +259,42 @@ fn build_ui(application: &gtk::Application) {
 
         file_chooser.set_do_overwrite_confirmation(true);
 
-        file_chooser.connect_response(|file_chooser, response| {
+        file_chooser.connect_response(clone!(@weak sourceview3, @weak doc_name3 ,@weak current_file3 => move|file_chooser, response| {
             if response == gtk::ResponseType::Ok {
 
+                let filename = file_chooser.get_filename().expect("Couldn't get filename");
 
-                //let filename = file_chooser.get_filename().expect("Couldn't get filename");
-                //let mut file = File::create(&filename).expect("create open file");
+                let buffer = sourceview3.get_buffer().expect("Couldn't get window");
 
-                // Write the `LOREM_IPSUM` string to `file`, returns `io::Result<()>`
-                //file.write_all(sourceview.get_buffer().unwrap().get_slice());
+                let bounds = buffer.get_bounds();
+
+                let text = buffer.get_text(&bounds.0,&bounds.1,true);
+
+                let path = Path::new(filename.to_str().unwrap());
+                let display = path.display();
+
+                let mut file = match File::create(&path) {
+                    Err(why) => panic!("couldn't create {}: {}", display, why),
+                    Ok(file) => file,
+                };
+
+                match file.write_all(text.unwrap().as_str().as_bytes()) {
+                    Err(why) => panic!("couldn't write to {}: {}", display, why),
+                    Ok(_) => println!("successfully wrote to {}", display),
+                }
+
+                match filename.to_str() {
+                    None => panic!("new path is not a valid UTF-8 sequence"),
+                    Some(name) => {  let chunks:Vec<&str> = name.split("/").collect();
+                                     doc_name3.set_text(&chunks[chunks.len()-1]);
+                                     current_file3.set_text(name);
+                                    }
+                }
 
             }
 
             file_chooser.close();
-        });
+        }));
 
         file_chooser.show_all();
     }));
