@@ -14,13 +14,6 @@ use esp8266_hal::{
     timer::{Timer1, Timer2, TimerExt},
 };
 
-pub struct LedMatrix{
-    column_data: [[usize; 8]; 8],
-    column_register: ShiftRegister,
-    row_register: ShiftRegister
-    
-}
-
 pub fn digital_write<Pin>(pin: &mut Pin, value: usize)
 where
     Pin: OutputPin<Error = Infallible>,
@@ -31,96 +24,125 @@ where
         pin.set_low().unwrap();
     }
 }
-
-pub struct ShiftRegister {
-    current_data: usize,
-    selector_data: usize,
-}
-impl ShiftRegister {
-    pub fn new() -> Self {
-        ShiftRegister {
-            current_data: 0b0000000,
-            selector_data: 0b00000001,
+/// Detieen el programa por una cantidad de milisegundos.
+pub fn delay_ms(mut millis: u32) {
+    while millis > 0 {
+        let delay = millis.min(1000);
+        unsafe {
+            HW.as_mut().unwrap().timer1.delay_ms(delay);
         }
-    }
-    pub fn shift<Data, Clk>(&mut self, datapin: &mut Data, clockpin: &mut Clk, data: usize)
-    where
-        Data: OutputPin<Error = Infallible>,
-        Clk: OutputPin<Error = Infallible>,
-    {
-        self.current_data = data;
-        digital_write(clockpin, 0);
-        for i in 0..8 {
-            digital_write(clockpin, 1);
-            digital_write(datapin, (data >> i) & self.selector_data);
-            digital_write(clockpin, 0);
-        }
+        millis -= delay;
     }
 }
 /// Muestra información de depuración de alguna manera.
 pub fn debug(hint: usize) {
     //TODO: Esto no se puede quedar así
     unsafe {
-        let hw = NODEMCU.as_mut().unwrap();
+        let hw = HW.as_mut().unwrap();
         digital_write(&mut hw.d1, hint & 0b01);
-        digital_write(&mut hw.d2, hint & 0b10);
-        digital_write(&mut hw.d3, hint & 0b01);
         digital_write(&mut hw.d4, hint & 0b10);
-        digital_write(&mut hw.d5, hint & 0b10);
-        digital_write(&mut hw.d6, hint & 0b01);
         digital_write(&mut hw.d7, hint & 0b10);
     }
 }
 
-/// Detieen el programa por una cantidad de milisegundos.
-pub fn delay_ms(mut millis: u32) {
-    while millis > 0 {
-        let delay = millis.min(1000);
-        unsafe {
-            NODEMCU.as_mut().unwrap().timer1.delay_ms(delay);
-        }
-        millis -= delay;
-    }
-}
-/// Recursos de E/S y eventos ("periféricos").
-struct NodeMCU {
+//Descripción de sistema MCU + Periféricos
+struct Hw {
     d1: gpio::Gpio5<Output<PushPull>>,
-    d2: gpio::Gpio4<Output<PushPull>>,
-    d3: gpio::Gpio0<Output<PushPull>>,
+    //d2: gpio::Gpio4<Output<PushPull>>,
+    //d3: gpio::Gpio0<Output<PushPull>>,
     d4: gpio::Gpio2<Output<PushPull>>,
-    d5: gpio::Gpio14<Output<PushPull>>,
-    d6: gpio::Gpio12<Output<PushPull>>,
+    //d5: gpio::Gpio14<Output<PushPull>>,
+    //d6: gpio::Gpio12<Output<PushPull>>,
     d7: gpio::Gpio13<Output<PushPull>>,
+    d8: gpio::Gpio15<Output<PushPull>>,
     timer1: Timer1,
     timer2: Timer2,
+    selector_data: usize,
+    col_datapin: gpio::Gpio4<Output<PushPull>>,   //d2
+    col_clockpin: gpio::Gpio0<Output<PushPull>>,  //d3
+    row_datapin: gpio::Gpio14<Output<PushPull>>,  //d
+    row_clockpin: gpio::Gpio12<Output<PushPull>>, //d
+    states: [usize; 8],
+}
+enum ShiftRegister {
+    Row,
+    Column,
+}
+impl Hw {
+    pub fn shift(&mut self, data: usize, register: ShiftRegister) {
+        match register {
+            ShiftRegister::Column => {
+                digital_write(&mut self.col_clockpin, 0);
+                for i in 0..9 {
+                    //escribe un bit adicional para limpiar
+                    digital_write(&mut self.col_clockpin, 1);
+                    digital_write(&mut self.col_datapin, (data >> i) & self.selector_data);
+                    digital_write(&mut self.col_clockpin, 0);
+                }
+            }
+            ShiftRegister::Row => {
+                digital_write(&mut self.row_clockpin, 0);
+                for i in 0..9 {
+                    //escribe un bit adicional para limpiar
+                    digital_write(&mut self.row_clockpin, 1);
+                    digital_write(&mut self.row_datapin, (data >> i) & self.selector_data);
+                    digital_write(&mut self.row_clockpin, 0);
+                }
+            }
+        }
+    }
+    pub fn draw(&mut self) {
+        for i in 0..8 {
+            &mut self.shift(!(0b10000000 >> i), ShiftRegister::Row);
+            &mut self.shift(self.states[i], ShiftRegister::Column);
+        }
+    }
+    pub fn draw_three(&mut self) {
+        let mut delay = 1000;
+        loop{
+            if(delay > 1){delay-=delay/2}
+            &mut self.shift(self.states[0], ShiftRegister::Column);
+            delay_ms(delay);
+            &mut self.shift(self.states[1], ShiftRegister::Column);
+            delay_ms(delay);
+            &mut self.shift(self.states[2], ShiftRegister::Column);
+            delay_ms(delay)
+        }
+    }
 }
 /// Instancia global de periféricos, ya que no tenemos atómicos.
-static mut NODEMCU: Option<NodeMCU> = None;
+static mut HW: Option<Hw> = None;
 
 /// Punto de entrada para ESP8266.
 #[entry]
 fn main() -> ! {
     use gpio::GpioExt;
-
     // Se descomponen estructuras de periféricos para formar self::HW
     let peripherals = Peripherals::take().unwrap();
     let gpio = peripherals.GPIO.split();
     let (timer1, timer2) = peripherals.TIMER.timers();
-
     unsafe {
-        NODEMCU = Some(NodeMCU {
+        HW = Some(Hw {
             d1: gpio.gpio5.into_push_pull_output(),
-            d2: gpio.gpio4.into_push_pull_output(),
-            d3: gpio.gpio0.into_push_pull_output(),
             d4: gpio.gpio2.into_push_pull_output(),
-            d5: gpio.gpio14.into_push_pull_output(),
-            d6: gpio.gpio12.into_push_pull_output(),
             d7: gpio.gpio13.into_push_pull_output(),
+            d8: gpio.gpio15.into_push_pull_output(),
             timer1,
             timer2,
+            selector_data: 0b00000001,
+            col_datapin: gpio.gpio4.into_push_pull_output(), //d2
+            col_clockpin: gpio.gpio0.into_push_pull_output(), //d3
+            states: [
+                0b11100111, 0b10101011, 0b01001101, 0b01111100, 0b01000100, 0b10000010, 0b11111111,
+                0b11000011,
+            ],
+            row_datapin: gpio.gpio14.into_push_pull_output(), //d5
+            row_clockpin: gpio.gpio12.into_push_pull_output(), //d6
         });
     }
-    shift_test();
+
+    //single_shift_test();
+    draw_test();
     crate::handover();
 
     // Aquí no hay un sistema operativo que se encargue de hacer algo
@@ -136,18 +158,27 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     }
 }
 
-fn shift_test() {
-    let mut register = ShiftRegister::new();
-    unsafe {
-        let hw = NODEMCU.as_mut().unwrap();
-        let datapin = &mut hw.d2;
-        let clockpin = &mut hw.d3;
-        digital_write(&mut hw.d4, 1);
+//funciones de prueba de sistema
+
+fn draw_test(){
+    unsafe{
+        let hw = HW.as_mut().unwrap();
+        digital_write(&mut hw.d4, 1); //apaga led builtin
         loop {
-            register.shift(datapin, clockpin, 0b11111111);
-            delay_ms(500);
-            register.shift(datapin, clockpin, 0b00000000);
-            delay_ms(500);
+            hw.draw_three();
+        }
+    }
+}
+
+fn single_shift_test() {
+    unsafe {
+        let hw = HW.as_mut().unwrap();
+        digital_write(&mut hw.d4, 1); //apaga led builtin
+        loop {
+            for i in 0..255 {
+                hw.shift(i, ShiftRegister::Column);
+                delay_ms(500);
+            }
         }
     }
 }
