@@ -20,14 +20,18 @@ impl<T> Located<T> {
             location: Location::new(from, position),
         }
     }
-    pub fn from_location(value:T,location: &Location)-> Self{
-        Located{
+    pub fn from_location(value: T, location: &Location) -> Self {
+        Located {
             value: value,
-            location: location.clone()
+            location: location.clone(),
         }
     }
-    pub fn from_one<U>(value:T, src: Located<U>)->Located<T>{
-        Located::at(value, src.location.from.clone(), src.location.position.clone())
+    pub fn from_one<U>(value: T, src: Located<U>) -> Located<T> {
+        Located::at(
+            value,
+            src.location.from.clone(),
+            src.location.position.clone(),
+        )
     }
     pub fn from_two<U, V>(value: T, src_start: Located<U>, src_end: Located<V>) -> Located<T> {
         Located::at(
@@ -39,7 +43,7 @@ impl<T> Located<T> {
     pub fn val(&self) -> &T {
         &self.value
     }
-    pub fn location(&self)-> &Location{
+    pub fn location(&self) -> &Location {
         &self.location
     }
 }
