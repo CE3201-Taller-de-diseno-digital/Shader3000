@@ -7,7 +7,8 @@
 
 use core::convert::Infallible;
 use esp8266_hal::{
-    ehal::{blocking::delay::DelayMs, digital::v2::OutputPin},
+    prelude::*,
+    ehal::{blocking::delay::{DelayMs,DelayUs}, digital::v2::OutputPin, timer::{Cancel, CountDown, Periodic}},
     entry,
     gpio::{self, Output, PushPull},
     target::Peripherals,
@@ -32,6 +33,16 @@ pub fn delay_ms(mut millis: u32) {
             HW.as_mut().unwrap().timer1.delay_ms(delay);
         }
         millis -= delay;
+    }
+}
+/// Detieen el programa por una cantidad de microsegundos.
+pub fn delay_us(mut micros: u32) {
+    while micros > 0 {
+        let delay = micros.min(1000);
+        unsafe {
+            HW.as_mut().unwrap().timer1.delay_us(delay);
+        }
+        micros -= delay;
     }
 }
 /// Muestra información de depuración de alguna manera.
@@ -93,21 +104,18 @@ impl Hw {
     }
     pub fn draw(&mut self) {
         for i in 0..8 {
+            delay_us(300);
             &mut self.shift(!(0b10000000 >> i), ShiftRegister::Row);
             &mut self.shift(self.states[i], ShiftRegister::Column);
         }
     }
     pub fn draw_three(&mut self) {
-        let mut delay = 1000;
-        loop{
-            if(delay > 1){delay-=delay/2}
-            &mut self.shift(self.states[0], ShiftRegister::Column);
-            delay_ms(delay);
-            &mut self.shift(self.states[1], ShiftRegister::Column);
-            delay_ms(delay);
-            &mut self.shift(self.states[2], ShiftRegister::Column);
-            delay_ms(delay)
-        }
+        &mut self.shift(self.states[0], ShiftRegister::Column);
+        delay_us(300);
+        &mut self.shift(self.states[1], ShiftRegister::Column);
+        delay_us(300);
+        &mut self.shift(self.states[2], ShiftRegister::Column);
+        delay_us(300);
     }
 }
 /// Instancia global de periféricos, ya que no tenemos atómicos.
@@ -160,12 +168,14 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 
 //funciones de prueba de sistema
 
-fn draw_test(){
-    unsafe{
+fn draw_test() {
+    unsafe {
         let hw = HW.as_mut().unwrap();
         digital_write(&mut hw.d4, 1); //apaga led builtin
+        let mut delay = 1000;
         loop {
-            hw.draw_three();
+            //hw.draw_three();
+            hw.draw(); //testeable en matriz de leds
         }
     }
 }
