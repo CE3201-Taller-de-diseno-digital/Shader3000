@@ -1,5 +1,9 @@
-//! Manual de ISA: <https://0x04.net/~mwk/doc/xtensa.pdf>.
-//! La ABI call0 está documentada en 8.1.2
+//! Implementación para Tensilica Xtensa.
+//!
+//! # Manual de ISA
+//! <https://0x04.net/~mwk/doc/xtensa.pdf>
+//!
+//! La ABI `call0` está documentada en 8.1.2.
 
 use crate::{
     codegen::Context,
@@ -8,18 +12,26 @@ use crate::{
 
 use std::{fmt, io};
 
-// Esta es una arquitectura de 32 bits
+/// Esta es una arquitectura de 32 bits.
 const VALUE_SIZE: u32 = 4;
 
+/// Registro de procesador.
+///
+/// La arquitectura expone 16 registros de propósito general,
+/// `a0` hasta `a15`, en todo momento. Existe una ventana de
+/// registros que extiende esto hasta cuatro veces. Esta
+/// implementación no hace uso de la ventana de registros.
 #[derive(Copy, Clone)]
 pub struct Reg(u8);
 
 impl Reg {
-    // En call0 se colocan los primeros 6 argumentos en a2-a7
+    /// Para la ABI `call0` se colocan los primeros seis argumentos en `a2`-`a7`.
     const MAX_ARGS: u32 = 6;
 
+    /// Registro `a2`.
     const A2: Reg = Reg(2);
 
+    /// Secuencia de registros en los que se colocan los primeros argumentos.
     fn argument_sequence() -> impl Iterator<Item = Reg> {
         (2..=7).map(Reg)
     }
@@ -34,6 +46,7 @@ impl fmt::Display for Reg {
     }
 }
 
+/// Implementación de emisión de código para Xtensa.
 pub struct Emitter<'a> {
     cx: Context<'a, Self>,
     frame_offset: i32,
@@ -60,6 +73,8 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
 
         // Se reserva memoria para locales. "+ 1" debido a que se debe preservar a0
         let total_locals = cx.agnostic_locals() + 1 + max_call_spill;
+
+        // Alineamiento de 16 bytes (4 * 4 bytes)
         let padding = if total_locals % 4 == 0 {
             0
         } else {
@@ -153,24 +168,29 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
 }
 
 impl Emitter<'_> {
+    /// Copia los contenidos de una local a un registro.
     fn local_to_register(&mut self, local: Local, register: Reg) -> io::Result<()> {
         self.load_or_store(register, local, "l32i")
     }
 
+    /// Copia los contenidos de un registro a una local.
     fn register_to_local(&mut self, register: Reg, local: Local) -> io::Result<()> {
         self.load_or_store(register, local, "s32i")
     }
 
+    /// Copia entre una local y un registro.
     fn load_or_store(&mut self, register: Reg, local: Local, instruction: &str) -> io::Result<()> {
         let address = self.local_address(local);
         emit!(self.cx, instruction, "{}, {}", register, address)
     }
 
+    /// Corrige el registro de puntero de stack.
     fn move_sp(&mut self, offset: i32) -> io::Result<()> {
         self.frame_offset -= offset;
         emit!(self.cx, "addi", "a1, a1, {}", offset * VALUE_SIZE as i32)
     }
 
+    /// Determina la posición de una
     fn local_address(&self, Local(local): Local) -> String {
         let parameters = self.cx.function().parameters;
         let value_offset = if local < Reg::MAX_ARGS || parameters < Reg::MAX_ARGS {

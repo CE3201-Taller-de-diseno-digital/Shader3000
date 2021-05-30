@@ -1,3 +1,8 @@
+//! Punto de entrada ("driver").
+//!
+//! Este módula orquesta las diferentes fases del proceso de
+//! compilación y expone una CLI.
+
 use anyhow::{self, bail, Context};
 use clap::{self, crate_version, Arg};
 use compiler::{
@@ -9,6 +14,7 @@ use compiler::{
 use std::{fs::File, rc::Rc, str::FromStr};
 
 fn main() -> anyhow::Result<()> {
+    // Parsing de CLI
     let args = clap::App::new("AnimationLed compiler")
         .version(crate_version!())
         .arg(
@@ -37,20 +43,22 @@ fn main() -> anyhow::Result<()> {
         )
         .get_matches();
 
+    // Se extraen argumentos necesarios
     let platform = args.value_of("target").unwrap();
     let platform = Platform::from_str(&platform).expect("main.rs allowed a bad target");
     let arch = platform.arch();
-
     let asm = args.is_present("asm");
     let output = args.value_of("output").unwrap();
 
     let program = test_program();
     match (asm, output) {
+        // Salida a stdout sin enlazado
         (true, "-") => {
             let mut stdout = std::io::stdout();
             target::emit(&program, arch, &mut stdout).context("Failed to emit to stdin")?;
         }
 
+        // Salida a archivo sin enlazado
         (true, path) => {
             let mut file = File::create(path)
                 .with_context(|| format!("Failed to open for writing: {}", path))?;
@@ -59,8 +67,10 @@ fn main() -> anyhow::Result<()> {
                 .with_context(|| format!("Failed to emit to file: {}", path))?;
         }
 
+        // Salida a stdout con enlazado
         (false, "-") => bail!("Refusing to write executable to stdout"),
 
+        // Salida a archivo con enlazado
         (false, path) => {
             let mut options = LinkOptions::empty();
             if args.is_present("strip") {
@@ -69,7 +79,7 @@ fn main() -> anyhow::Result<()> {
 
             let mut linker = Linker::spawn(platform, &path, options).context("Failed to link")?;
             target::emit(&program, arch, linker.stdin())
-                .context("Failed to emit through linker")?;
+                .context("Failed to emit assembly to assembler")?;
 
             linker
                 .finish()
@@ -81,6 +91,10 @@ fn main() -> anyhow::Result<()> {
 }
 
 fn test_program() -> Program {
+    // Este es un programa de prueba para mientras no se haya terminado la
+    // pipeline lexer->parser->magia->ir->asm->link. Debería eliminarse
+    // eventualmente.
+
     let builtin_inc = Rc::new(Function {
         name: String::from("builtin_inc"),
         parameters: 1,

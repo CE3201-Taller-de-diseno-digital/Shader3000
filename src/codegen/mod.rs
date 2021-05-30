@@ -1,3 +1,9 @@
+//! Generación de código.
+//!
+//! Esta fase consiste en la traducción de representación
+//! intermedia (véase [`crate::ir`]) a un lenguaje ensamblador
+//! objetivo en particular. Este módulo :
+
 use crate::{
     arch::{Arch, Emitter},
     ir::{Function, FunctionBody, Global, Instruction, Label, Local, Program},
@@ -8,16 +14,26 @@ use std::{
     ops::Deref,
 };
 
+/// Emite código ensamblador para un programa IR.
+///
+/// Esta función es el punto de entrada del mecanismo de generación
+/// de código. Cada función es escrita al flujo de salida según
+/// corresponda para la arquitectura objetivo. La salida está destinada
+/// a ser utilizada directamente por el GNU assembler y no se esperan
+/// otras interpretaciones o manipulaciones antes de ello.
 pub fn emit(program: &Program, arch: Arch, output: &mut dyn Write) -> io::Result<()> {
     let value_size = dispatch_arch!(Emitter: arch => Emitter::VALUE_SIZE);
 
+    // Variables globales van en .bss
     for global in &program.globals {
         let Global(name) = global.deref();
         writeln!(output, ".lcomm {}, {}", name, value_size)?;
     }
 
+    // user_main() es un caso especial en lo que respecta a enlazado
     writeln!(output, ".text\n.global user_main")?;
 
+    // Se emite propiamente cada función no externa
     for function in &program.code {
         if let FunctionBody::Generated(instructions) = &function.body {
             dispatch_arch!(Emitter: arch => {
@@ -29,6 +45,11 @@ pub fn emit(program: &Program, arch: Arch, output: &mut dyn Write) -> io::Result
     Ok(())
 }
 
+/// Contexto de emisión.
+///
+/// Esta estructura contiene información que las implementaciones
+/// de emisión requieren con frecuencia, como lo son el flujo de salida
+/// y la función IR que está siendo generada.
 pub struct Context<'a, E: Emitter<'a>> {
     function: &'a Function,
     output: &'a mut dyn Write,
@@ -37,19 +58,30 @@ pub struct Context<'a, E: Emitter<'a>> {
 }
 
 impl<'a, E: Emitter<'a>> Context<'a, E> {
+    /// Función en forma IR que está siendo generada.
     pub fn function(&self) -> &Function {
         self.function
     }
 
+    /// Flujo de salida.
     pub fn output(&mut self) -> &mut dyn Write {
         self.output
     }
 
+    /// Cantidad máxima de locales que la función accede,
+    /// recibe o utiliza en su forma IR.
+    ///
+    /// Este número se denomina "agnóstico" ya que algunas
+    /// implementaciones pueden optar por insertar locales
+    /// adicionales por razones que dependen de la arquitectura.
     pub fn agnostic_locals(&self) -> u32 {
         self.locals
     }
 }
 
+/// Emite cada una de las instrucciones de una función no externa.
+///
+/// La correspondencia IR:ensamblador es siempre 1:N.
 fn emit_body<'a, E: Emitter<'a>>(
     output: &'a mut dyn Write,
     function: &'a Function,
@@ -62,6 +94,8 @@ fn emit_body<'a, E: Emitter<'a>>(
         .unwrap_or(0)
         .max(function.parameters);
 
+    // Colocar cada función en su propia sección permite eliminar
+    // código muerto con -Wl,--gc-sections en la fase de enlazado
     writeln!(output, ".section .text.{0}\n{0}:", function.name)?;
 
     let context = Context {
@@ -107,10 +141,13 @@ fn emit_body<'a, E: Emitter<'a>>(
     emitter.epilogue()
 }
 
+/// Genera el símbolo que corresponde a una etiqueta dentro de una función.
 fn label_symbol(function: &Function, Label(label): Label) -> String {
     format!(".L{}.{}", function.name, label)
 }
 
+/// Cuenta la mínima cantidad de locales que una instrucción exige
+/// que se encuentren disponsibles.
 fn required_locals(instruction: &Instruction) -> u32 {
     use Instruction::*;
 

@@ -1,3 +1,5 @@
+//! Análisis sintáctico.
+
 use std::iter::Peekable;
 
 use crate::{
