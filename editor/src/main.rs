@@ -74,8 +74,31 @@ fn build_ui(application: &gtk::Application) {
     //Help
     let about: gtk::MenuItem = builder.get_object("about").unwrap();
 
+    //Scrolled Window
+
+    let scroll: gtk::ScrolledWindow = builder.get_object("sourceHold").unwrap();
+
     //SourceView
-    let sourceview: sourceview::View = builder.get_object("source").unwrap();
+    //let sourceview: sourceview::View = builder.get_object("source").unwrap();
+
+    //let buffer : sourceview::Buffer = builder.get_object("textbuffer1").unwrap();
+
+    let buffer = sourceview::Buffer::new_with_language(
+        &sourceview::LanguageManager::get_default()
+            .unwrap()
+            .get_language("c")
+            .unwrap(),
+    );
+
+    //let buffer = sourceview.get_buffer().unwrap() as sourceview::Buffer;
+
+    buffer.set_highlight_syntax(true);
+
+    let sourceview = sourceview::View::new_with_buffer(&buffer);
+
+    scroll.add(&sourceview);
+
+    //print!("{:?}",sourceview::LanguageManager::get_default().unwrap().get_language_ids());
 
     //Notebook
     let doc_name: gtk::Label = builder.get_object("doc_name").unwrap();
@@ -214,7 +237,9 @@ fn build_ui(application: &gtk::Application) {
 
     let sourceview4 = sourceview.clone();
 
-    save.connect_activate(clone!(@weak current_file4,@weak sourceview4  => move |_| {
+    //let buffer2 = buffer.clone();
+
+    save.connect_activate(clone!(@weak current_file4,@weak sourceview4 => move |_| {
 
         let filename = current_file4.get_text();
 
