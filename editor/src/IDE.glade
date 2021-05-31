@@ -273,23 +273,13 @@
                     <property name="can-focus">True</property>
                     <property name="scrollable">True</property>
                     <child>
-                      <object class="GtkScrolledWindow">
+                      <object class="GtkScrolledWindow" id="sourceHold">
                         <property name="visible">True</property>
                         <property name="can-focus">True</property>
                         <property name="shadow-type">in</property>
                         <property name="min-content-width">480</property>
                         <child>
-                          <object class="GtkSourceView" id="source">
-                            <property name="visible">True</property>
-                            <property name="can-focus">True</property>
-                            <property name="left-margin">2</property>
-                            <property name="right-margin">2</property>
-                            <property name="input-hints">GTK_INPUT_HINT_WORD_COMPLETION | GTK_INPUT_HINT_NONE</property>
-                            <property name="show-line-numbers">True</property>
-                            <property name="show-line-marks">True</property>
-                            <property name="auto-indent">True</property>
-                            <property name="smart-home-end">always</property>
-                          </object>
+                          <placeholder/>
                         </child>
                       </object>
                       <packing>

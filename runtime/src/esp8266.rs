@@ -14,11 +14,10 @@ use esp8266_hal::{
     timer::{Timer1, Timer2, TimerExt},
 };
 
-pub struct LedMatrix{
+pub struct LedMatrix {
     column_data: [[usize; 8]; 8],
     column_register: ShiftRegister,
-    row_register: ShiftRegister
-    
+    row_register: ShiftRegister,
 }
 
 pub fn digital_write<Pin>(pin: &mut Pin, value: usize)
