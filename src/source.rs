@@ -79,6 +79,14 @@ impl Location {
     pub fn new(from: SourceName, position: Range<Position>) -> Self {
         Location { from, position }
     }
+
+    /// Unifica un rango de ubicaciones. Se asume el mismo origen.
+    pub fn span(from: Location, to: &Location) -> Self {
+        Location {
+            from: from.from,
+            position: from.position.start..to.position.end,
+        }
+    }
 }
 
 impl Display for Location {

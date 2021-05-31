@@ -99,6 +99,9 @@ pub enum Token {
     /// `,`
     Comma,
 
+    /// `.`
+    Period,
+
     /// `+`
     Plus,
 
@@ -176,7 +179,7 @@ pub enum Keyword {
     For,
     In,
     Step,
-    Del,
+    Call,
     Procedure,
 }
 
@@ -199,7 +202,7 @@ impl FromStr for Keyword {
             (CI::new("for"), For),
             (CI::new("in"), In),
             (CI::new("step"), Step),
-            (CI::new("del"), Del),
+            (CI::new("call"), Call),
             (CI::new("procedure"), Procedure),
         ];
 
@@ -352,6 +355,7 @@ impl<S: InputStream> Lexer<S> {
                 // Tokens triviales
                 (Start, None) => return Ok(None),
                 (Start, Some(',')) => self.state = Complete(Comma),
+                (Start, Some('.')) => self.state = Complete(Period),
                 (Start, Some('+')) => self.state = Complete(Plus),
                 (Start, Some('-')) => self.state = Complete(Minus),
                 (Start, Some('%')) => self.state = Complete(Mod),
