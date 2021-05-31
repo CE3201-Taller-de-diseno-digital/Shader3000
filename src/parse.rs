@@ -1,6 +1,6 @@
 //! Análisis sintáctico.
 
-use std::iter::Peekable;
+use std::{iter::Peekable, marker::PhantomData};
 use thiserror::Error;
 
 use crate::{
@@ -122,20 +122,23 @@ pub enum ParserError {
     UnexpectedEof,
 }
 
-pub trait TokenStream = Iterator<Item = Located<Token>>;
+pub trait TokenStream<'a> = Iterator<Item = &'a Located<Token>> + Clone;
 
-pub fn parse(tokens: impl TokenStream) -> Result<Ast, Located<ParserError>> {
+pub fn parse<'a>(tokens: impl TokenStream<'a>) -> Result<Ast, Located<ParserError>> {
     let mut parser = Parser {
         tokens: tokens.peekable(),
         last_known: Location::default(),
+        lifetime_hack: PhantomData,
     };
 
     parser.program().map_err(Failure::coerce)
 }
 
-struct Parser<I: TokenStream> {
+#[derive(Clone)]
+struct Parser<'a, I: TokenStream<'a>> {
     tokens: Peekable<I>,
     last_known: Location,
+    lifetime_hack: PhantomData<&'a ()>,
 }
 
 enum Failure {
@@ -162,7 +165,7 @@ impl Failure {
 
 type Parse<T> = Result<T, Failure>;
 
-impl<I: TokenStream> Parser<I> {
+impl<'a, I: TokenStream<'a>> Parser<'a, I> {
     fn program(&mut self) -> Parse<Ast> {
         let mut procedures = Vec::new();
         while self.tokens.peek().is_some() {
@@ -203,7 +206,7 @@ impl<I: TokenStream> Parser<I> {
 
         let mut statements = Vec::new();
         loop {
-            match self.statement() {
+            match self.lookahead(Parser::statement) {
                 Ok(statement) => statements.push(statement),
                 Err(Failure::Weak(_)) => {
                     self.expect(Token::CloseCurly)?;
@@ -221,7 +224,8 @@ impl<I: TokenStream> Parser<I> {
     }
 
     fn typ(&mut self) -> Parse<Located<Type>> {
-        let typ = match self.peek()? {
+        let (location, token) = self.next()?.split();
+        let typ = match token {
             Token::Keyword(Keyword::Int) => Type::Int,
             Token::Keyword(Keyword::Bool) => Type::Bool,
             Token::Keyword(Keyword::List) => Type::List,
@@ -229,20 +233,34 @@ impl<I: TokenStream> Parser<I> {
             _ => return self.fail(ParserError::ExpectedType),
         };
 
-        Ok(self.next()?.map(|_| typ))
+        Ok(Located::at(typ, location))
+    }
+
+    fn lookahead<T, F>(&mut self, rule: F) -> Parse<T>
+    where
+        F: FnOnce(&mut Self) -> Parse<T>,
+    {
+        let mut fork = self.clone();
+
+        let result = rule(&mut fork);
+        if result.is_ok() {
+            *self = fork;
+        }
+
+        result
     }
 
     fn comma_separated<T, F>(&mut self, mut rule: F) -> Parse<Vec<T>>
     where
         F: FnMut(&mut Self) -> Parse<T>,
     {
-        let mut items = match rule(self) {
+        let mut items = match self.lookahead(|s| rule(s)) {
             Err(Failure::Weak(_)) => return Ok(Vec::new()),
             item => vec![item?],
         };
 
         loop {
-            match self.expect(Token::Comma).map_err(Failure::weak) {
+            match self.lookahead(|s| s.expect(Token::Comma).map_err(Failure::weak)) {
                 Err(Failure::Weak(_)) => break Ok(items),
                 result => {
                     result?;
@@ -253,12 +271,9 @@ impl<I: TokenStream> Parser<I> {
     }
 
     fn identifier(&mut self) -> Parse<Located<Identifier>> {
-        match self.peek()? {
-            Token::Id(id) => {
-                let id = id.clone();
-                Ok(self.next()?.map(|_| id))
-            }
-
+        let (location, token) = self.next()?.split();
+        match token {
+            Token::Id(id) => Ok(Located::at(id, location)),
             _ => self.fail(ParserError::ExpectedId),
         }
     }
@@ -268,29 +283,10 @@ impl<I: TokenStream> Parser<I> {
     }
 
     fn expect(&mut self, token: Token) -> Parse<()> {
-        match self.peek() {
-            Ok(found) if *found == token => {
-                self.next()?;
-                Ok(())
-            }
-
-            Ok(found) => {
-                let found = found.clone();
-                self.fail(ParserError::UnexpectedToken(token, found))
-            }
-
+        match self.next().map(Located::into_inner) {
+            Ok(found) if found == token => Ok(()),
+            Ok(found) => self.fail(ParserError::UnexpectedToken(token, found)),
             Err(_) => self.fail(ParserError::MissingToken(token)),
-        }
-    }
-
-    fn peek(&mut self) -> Parse<&Token> {
-        match self.tokens.peek() {
-            Some(token) => {
-                self.last_known = token.location().clone();
-                Ok(token.as_ref())
-            }
-
-            None => todo!(),
         }
     }
 
@@ -298,7 +294,7 @@ impl<I: TokenStream> Parser<I> {
         match self.tokens.next() {
             Some(token) => {
                 self.last_known = token.location().clone();
-                Ok(token)
+                Ok(token.clone())
             }
 
             None => self.fail(ParserError::UnexpectedEof),

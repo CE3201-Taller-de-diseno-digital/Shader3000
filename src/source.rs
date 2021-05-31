@@ -24,6 +24,26 @@ pub struct Located<T> {
 }
 
 impl<T> Located<T> {
+    /// Obtiene el valor.
+    pub fn val(&self) -> &T {
+        &self.value
+    }
+
+    /// Obtiene la ubicación.
+    pub fn location(&self) -> &Location {
+        &self.location
+    }
+
+    /// Descarta la ubicación y toma ownership del valor.
+    pub fn into_inner(self) -> T {
+        self.value
+    }
+
+    /// Descompone y toma ownership de las dos partes.
+    pub fn split(self) -> (Location, T) {
+        (self.location, self.value)
+    }
+
     /// Construye a partir de un valor y una ubicación.
     pub fn at(value: T, location: Location) -> Self {
         Located { value, location }
@@ -38,16 +58,6 @@ impl<T> Located<T> {
             value: map(self.value),
             location: self.location,
         }
-    }
-
-    /// Obtiene el valor.
-    pub fn val(&self) -> &T {
-        &self.value
-    }
-
-    /// Obtiene la ubicación.
-    pub fn location(&self) -> &Location {
-        &self.location
     }
 }
 

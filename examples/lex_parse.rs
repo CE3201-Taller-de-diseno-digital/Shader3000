@@ -14,7 +14,7 @@ fn main() {
         Ok(tokens) => {
             println!("Tokens: {:#?}", tokens);
             println!();
-            println!("{:#?}", parse::parse(tokens.into_iter()));
+            println!("{:#?}", parse::parse(tokens.iter()));
         }
     }
 }
