@@ -233,8 +233,10 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
         loop {
             match self.attempt(Parser::statement) {
                 Ok(statement) => statements.push(statement),
-                Err(Failure::Weak(_)) => {
-                    self.expect(Token::CloseCurly)?;
+                Err(Failure::Weak(error)) => {
+                    self.expect(Token::CloseCurly)
+                        .map_err(|_| Failure::Strict(error))?;
+
                     break Ok(statements);
                 }
 
