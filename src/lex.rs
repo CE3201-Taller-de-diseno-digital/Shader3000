@@ -29,8 +29,8 @@
 //! ejecución, pero no lo suficiente como para permitir el avance a las
 //! demás fases de la compilación.
 
-use crate::source::{InputStream, Located, Position, SourceName};
-use std::str::FromStr;
+use crate::source::{InputStream, Located, Location, Position, SourceName};
+use std::{rc::Rc, str::FromStr};
 use thiserror::Error;
 
 /// Límite de longitud de identificadores.
@@ -61,25 +61,25 @@ pub enum LexerError {
     UnterminatedString,
 
     /// Un identificador excede el límite de longitud.
-    #[error("identifier exceeds {MAX_ID_LENGTH} characters")]
+    #[error("Identifier exceeds {MAX_ID_LENGTH} characters")]
     IdTooLong,
 
     /// Se trató de comenzar un identificador con una letra mayúscula.
-    #[error("identifiers must begin with a lowercase letter")]
+    #[error("Identifiers must begin with a lowercase letter")]
     UppercaseId,
 }
 
 /// Un identificador.
 ///
 /// Los identificadores cumplen ciertas reglas de contenido y longitud.
-#[derive(Debug, Clone)]
-pub struct Identifier(String);
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Identifier(Rc<String>);
 
 /// Objeto resultante del análisis léxico.
 ///
 /// Un token contiene suficiente información para describir completamente
 /// a una entidad léxica en el programa fuente.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
     /// Identificador.
     Id(Identifier),
@@ -306,10 +306,7 @@ impl<S: InputStream> Lexer<S> {
     /// errores. El propósito de esta función es permitir la
     /// recolección de múltiples errores léxicos en una misma ejecución
     /// del compilador.
-    pub fn try_exhaustive(
-        mut self,
-    ) -> Result<impl Iterator<Item = Located<Token>>, impl Iterator<Item = Located<LexerError>>>
-    {
+    pub fn try_exhaustive(mut self) -> Result<Vec<Located<Token>>, Vec<Located<LexerError>>> {
         let mut tokens = Vec::new();
 
         while let Some(result) = self.next() {
@@ -321,12 +318,12 @@ impl<S: InputStream> Lexer<S> {
                     let mut errors = vec![error];
                     errors.extend(self.filter_map(Result::err));
 
-                    return Err(errors.into_iter());
+                    return Err(errors);
                 }
             }
         }
 
-        Ok(tokens.into_iter())
+        Ok(tokens)
     }
 
     /// Intenta construir un siguiente token.
@@ -459,7 +456,7 @@ impl<S: InputStream> Lexer<S> {
                         self.start = self.next;
                         break Err(LexerError::UppercaseId);
                     } else {
-                        break Ok(Id(Identifier(std::mem::take(word))));
+                        break Ok(Id(Identifier(Rc::new(std::mem::take(word)))));
                     }
                 }
             }
@@ -488,7 +485,7 @@ impl<S: InputStream> Iterator for Lexer<S> {
             Ok(None) => None,
             Ok(Some(token)) => {
                 let range = self.start..self.next;
-                let next = Located::at(token, self.from.clone(), range);
+                let next = Located::at(token, Location::new(self.from.clone(), range));
 
                 self.start = self.next;
                 self.state = State::Start;
@@ -500,7 +497,10 @@ impl<S: InputStream> Iterator for Lexer<S> {
                 self.state = State::Error;
 
                 let range = self.next..self.next.advance();
-                Some(Err(Located::at(error, self.from.clone(), range)))
+                Some(Err(Located::at(
+                    error,
+                    Location::new(self.from.clone(), range),
+                )))
             }
         }
     }

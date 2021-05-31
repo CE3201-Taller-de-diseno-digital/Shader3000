@@ -5,7 +5,8 @@
 //! ejecutable.
 
 use std::{
-    path::{Path, PathBuf},
+    fs,
+    path::Path,
     process::{Child, ChildStdin, Command, ExitStatus, Stdio},
     str::FromStr,
 };
@@ -99,8 +100,9 @@ impl Linker {
     {
         let params = platform.link_params();
 
-        //TODO: lib/ en otros lados que no sean $PWD
-        let mut library_path: PathBuf = "lib".into();
+        let mut library_path = fs::read_link("/proc/self/exe").expect("Failed to read symlink");
+        library_path.pop(); // "<...>/compiler" => "<...>"
+        library_path.push("lib");
         library_path.push(params.name);
 
         // Para ensamblar el código máquina generador por codegen,
