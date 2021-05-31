@@ -6,7 +6,7 @@
 
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::Path,
     process::{Child, ChildStdin, Command, ExitStatus, Stdio},
     str::FromStr,
 };

@@ -24,40 +24,20 @@ pub struct Located<T> {
 }
 
 impl<T> Located<T> {
-    /// Construye un `Located` a partir de un valor, un identificador
-    /// de origen y un rango de posiciones.
-    pub fn at(value: T, from: SourceName, position: Range<Position>) -> Self {
-        Located {
-            value,
-            location: Location::new(from, position),
-        }
-    }
-
     /// Construye a partir de un valor y una ubicación.
-    pub fn from_location(value: T, location: &Location) -> Self {
+    pub fn at(value: T, location: Location) -> Self {
+        Located { value, location }
+    }
+
+    /// Transforma el valor con la misma ubicación.
+    pub fn map<U, F>(self, map: F) -> Located<U>
+    where
+        F: FnOnce(T) -> U,
+    {
         Located {
-            value: value,
-            location: location.clone(),
+            value: map(self.value),
+            location: self.location,
         }
-    }
-
-    /// Transporta una ubicación a otro objeto.
-    pub fn from_one<U>(value: T, src: Located<U>) -> Located<T> {
-        Located::at(
-            value,
-            src.location.from.clone(),
-            src.location.position.clone(),
-        )
-    }
-
-    /// Construye, tomando para inicio y fin el inicio y fin respectivo
-    /// de otros objetos ubicados cualesquiera.
-    pub fn from_two<U, V>(value: T, src_start: Located<U>, src_end: Located<V>) -> Located<T> {
-        Located::at(
-            value,
-            src_start.location.from.clone(),
-            src_start.location.position.start..src_end.location.position.end,
-        )
     }
 
     /// Obtiene el valor.
@@ -78,7 +58,7 @@ impl<T> AsRef<T> for Located<T> {
 }
 
 /// Una ubicación está conformada por un origen y un rango de posiciones.
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct Location {
     from: SourceName,
     position: Range<Position>,
@@ -115,7 +95,7 @@ impl Debug for Location {
 ///
 /// La cadena es arbitraria y no se interpreta de ninguna forma.
 /// Su propósito es añadir información a mensajes de error.
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct SourceName(Rc<String>);
 
 impl SourceName {
