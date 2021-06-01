@@ -30,7 +30,11 @@
 //! demás fases de la compilación.
 
 use crate::source::{InputStream, Located, Location, Position, SourceName};
-use std::{rc::Rc, str::FromStr};
+use std::{
+    fmt::{self, Display},
+    rc::Rc,
+    str::FromStr,
+};
 use thiserror::Error;
 
 /// Límite de longitud de identificadores.
@@ -166,6 +170,43 @@ pub enum Token {
     CloseCurly,
 }
 
+impl Display for Token {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Token::*;
+
+        match self {
+            Id(id) => write!(fmt, "identifier `{}`", id.0),
+            Keyword(keyword) => write!(fmt, "keyword `{}`", keyword),
+            StrLiteral(string) => write!(fmt, "literal \"{}\"", string),
+            IntLiteral(integer) => write!(fmt, "literal `{}`", integer),
+            Assign => fmt.write_str("`=`"),
+            Comma => fmt.write_str("`,`"),
+            Period => fmt.write_str("`.`"),
+            Plus => fmt.write_str("`+`"),
+            Minus => fmt.write_str("`-`"),
+            Times => fmt.write_str("`*`"),
+            Pow => fmt.write_str("`**`"),
+            Div => fmt.write_str("`/`"),
+            IntegerDiv => fmt.write_str("`//`"),
+            Mod => fmt.write_str("`%`"),
+            Colon => fmt.write_str("`:`"),
+            Semicolon => fmt.write_str("`;`"),
+            Equal => fmt.write_str("`==`"),
+            NotEqual => fmt.write_str("`<>`"),
+            Less => fmt.write_str("`<`"),
+            LessOrEqual => fmt.write_str("`<=`"),
+            Greater => fmt.write_str("`>`"),
+            GreaterOrEqual => fmt.write_str("`>=`"),
+            OpenParen => fmt.write_str("`(`"),
+            OpenSquare => fmt.write_str("`[`"),
+            OpenCurly => fmt.write_str("`{`"),
+            CloseParen => fmt.write_str("`)`"),
+            CloseSquare => fmt.write_str("]`"),
+            CloseCurly => fmt.write_str("`}`"),
+        }
+    }
+}
+
 /// Una palabra clave.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Keyword {
@@ -181,6 +222,28 @@ pub enum Keyword {
     Step,
     Call,
     Procedure,
+}
+
+impl Display for Keyword {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Keyword::*;
+        let string = match self {
+            True => "true",
+            False => "false",
+            Type => "type",
+            List => "list",
+            Bool => "bool",
+            Int => "int",
+            If => "if",
+            For => "for",
+            In => "in",
+            Step => "step",
+            Call => "call",
+            Procedure => "procedure",
+        };
+
+        fmt.write_str(string)
+    }
 }
 
 impl FromStr for Keyword {

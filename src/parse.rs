@@ -119,10 +119,10 @@ pub enum ParserError {
     #[error("Missing operand in sequence")]
     MissingOperand,
 
-    #[error("Expected token {0:?}, found {1:?} instead")]
+    #[error("Expected {0}, found {1}")]
     UnexpectedToken(Token, Token),
 
-    #[error("Expected token {0:?}, none was found instead")]
+    #[error("Expected {0}, no token was found instead")]
     MissingToken(Token),
 
     #[error("Expected  \",\" or \")\"")]
