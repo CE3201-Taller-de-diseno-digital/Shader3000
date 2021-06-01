@@ -1,20 +1,26 @@
-use compiler::{
-    lex::Lexer,
-    parse,
-    source::{self, SourceName},
-};
+use compiler::{error::Diagnostics, lex::Lexer, parse, source};
 
 fn main() {
     let stdin = std::io::stdin();
     let mut stdin = stdin.lock();
 
-    let lexer = Lexer::new(source::consume(&mut stdin), SourceName::from("<stdin>"));
-    match lexer.try_exhaustive() {
-        Err(errors) => eprintln!("{:#?}", errors),
+    let (start, stream) = source::consume(&mut stdin, "<stdin>");
+    let lexer = Lexer::new(start.clone(), stream);
+
+    let diagnostics = match lexer.try_exhaustive() {
+        Err(errors) => Diagnostics::from(errors),
         Ok(tokens) => {
-            println!("Tokens: {:#?}", tokens);
-            println!();
-            println!("{:#?}", parse::parse(tokens.into_iter()));
+            print!("Tokens: {:#?}\n\n", tokens);
+
+            match parse::parse(tokens.iter(), start) {
+                Err(error) => Diagnostics::from(error),
+                Ok(ast) => {
+                    println!("{:#?}", ast);
+                    Diagnostics::default()
+                }
+            }
         }
-    }
+    };
+
+    eprint!("{}", diagnostics);
 }

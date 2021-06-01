@@ -25,6 +25,7 @@
 #[macro_use]
 mod macros;
 
+pub mod error;
 pub mod ir;
 pub mod lex;
 pub mod link;
