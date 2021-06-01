@@ -29,6 +29,7 @@ pub enum Type {
     Int,
     Bool,
     List,
+    Of(Located<Expr>),
 }
 
 #[derive(Debug)]
@@ -507,6 +508,13 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
             Token::Keyword(Keyword::Int) => Type::Int,
             Token::Keyword(Keyword::Bool) => Type::Bool,
             Token::Keyword(Keyword::List) => Type::List,
+            Token::Keyword(Keyword::Type) => {
+                self.expect(Token::OpenParen)?;
+                let expr = self.expr().map_err(Failure::strict)?;
+                self.expect(Token::CloseParen)?;
+
+                Type::Of(expr)
+            }
 
             _ => self.fail(ParserError::ExpectedType)?,
         };
