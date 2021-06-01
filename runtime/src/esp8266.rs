@@ -15,7 +15,7 @@ use esp8266_hal::{
     timer::{Timer1, Timer2, TimerExt},
     uart::{UART0Ext, UART0Serial},
 };
-use xtensa_lx::mutex::{CriticalSectionMutex, Mutex};
+use xtensa_lx::mutex::{CriticalSectionMutex, Mutex, SpinLockMutex};
 
 pub fn digital_write<Pin>(pin: &mut Pin, value: usize)
 where
@@ -110,7 +110,7 @@ impl Hw {
         &mut self.next_row();
     }
     pub fn next_row(&mut self) {
-        if (self.current_state < 2) {
+        if (self.current_state < 7) {
             self.current_state += 1;
         } else {
             self.current_state = 0;
@@ -123,7 +123,7 @@ impl Hw {
 }
 /// Instancia global de periféricos, ya que no tenemos atómicos.
 //static mut HW: Option<Hw> = None;
-static HW: CriticalSectionMutex<Option<Hw>> = CriticalSectionMutex::new(None);
+static HW: SpinLockMutex<Option<Hw>> = SpinLockMutex::new(None);
 static MILLIS: CriticalSectionMutex<Option<u32>> = CriticalSectionMutex::new(None);
 /// Punto de entrada para ESP8266.
 #[entry]
@@ -147,8 +147,8 @@ fn main() -> ! {
         col_datapin: gpio.gpio4.into_push_pull_output(), //d2
         col_clockpin: gpio.gpio0.into_push_pull_output(), //d3
         states: [
-            0b11100111, 0b10101011, 0b01001101, 0b01111100, 0b01000100, 0b10000010, 0b11111111,
-            0b11000011,
+            0b11010111, 0b10111101, 0b10001011, 0b11111011, 0b11111101, 0b11110111, 0b11001011,
+            0b11111101,
         ],
         current_state: 0,
         row_datapin: gpio.gpio14.into_push_pull_output(), //d5
@@ -161,8 +161,8 @@ fn main() -> ! {
     (&MILLIS).lock(|time| *time = Some(0));
 
     loop {
-        delay_ms(2);
-        (&HW).lock(|hw| hw.as_mut().unwrap().d7.toggle().unwrap());
+        //delay_ms(2);
+        //(&HW).lock(|hw| hw.as_mut().unwrap().d7.toggle().unwrap());
     }
 
     crate::handover();
@@ -186,9 +186,9 @@ fn timer1() {
     unsafe {
         CL += 1;
         if (CL % 50000 == 0) {
-            (&HW).lock(|hw| hw.as_mut().unwrap().d7.toggle().unwrap());
+            (&HW).lock(|hw| hw.as_mut().unwrap().d4.toggle().unwrap());
         }
-        if (CL % 400 == 0) {
+        if (CL % 100 == 0) {
             (&HW).lock(|hw| hw.as_mut().unwrap().draw());
         }
     }
