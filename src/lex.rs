@@ -221,6 +221,7 @@ pub enum Keyword {
     For,
     In,
     Step,
+    Len,
     Call,
     Procedure,
 }
@@ -238,6 +239,7 @@ impl Display for Keyword {
             If => "if",
             For => "for",
             In => "in",
+            Len => "len",
             Step => "step",
             Call => "call",
             Procedure => "procedure",
@@ -265,6 +267,7 @@ impl FromStr for Keyword {
             (CI::new("if"), If),
             (CI::new("for"), For),
             (CI::new("in"), In),
+            (CI::new("len"), Len),
             (CI::new("step"), Step),
             (CI::new("call"), Call),
             (CI::new("procedure"), Procedure),

@@ -69,6 +69,7 @@ pub enum Expr {
     False,
     Integer(i32),
     Read(Target),
+    Len(Box<Located<Expr>>),
     List(Vec<Located<Expr>>),
     Negate(Box<Located<Expr>>),
     Binary {
@@ -540,15 +541,28 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
 
         let (expr, location) = match self.lookahead(Parser::next)?.into_inner() {
             Token::Keyword(Keyword::True) => terminal(self, Expr::True)?,
-            Token::Keyword(Keyword::False) => terminal(self, Expr::True)?,
+            Token::Keyword(Keyword::False) => terminal(self, Expr::False)?,
             Token::IntLiteral(integer) => terminal(self, Expr::Integer(integer))?,
+
+            Token::Keyword(Keyword::Len) => {
+                let (start, _) = self.next()?.split();
+                self.expect(Token::OpenParen)?;
+
+                let inner = self.expr().map_err(Failure::strict)?;
+
+                self.expect(Token::CloseParen)?;
+                (
+                    Expr::Len(Box::new(inner)),
+                    Location::span(start, &self.last_known),
+                )
+            }
 
             Token::Minus => {
                 let (start, _) = self.next()?.split();
-                let sub = self.delimited_expr().map_err(Failure::strict)?;
-                let location = Location::span(start, sub.location());
+                let inner = self.delimited_expr().map_err(Failure::strict)?;
+                let location = Location::span(start, inner.location());
 
-                (Expr::Negate(Box::new(sub)), location)
+                (Expr::Negate(Box::new(inner)), location)
             }
 
             Token::OpenParen => {
