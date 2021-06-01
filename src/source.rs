@@ -15,9 +15,6 @@ use std::{
     rc::Rc,
 };
 
-/// Ancho de los divisores de tabulador.
-const TAB_STOP: u32 = 4;
-
 /// Un flujo de entrada, carácter por carácter.
 pub trait InputStream = Iterator<Item = Result<(char, Location), io::Error>>;
 
@@ -75,7 +72,7 @@ impl<T> AsRef<T> for Located<T> {
 /// Una ubicación está conformada por un origen y un rango de posiciones.
 #[derive(Clone)]
 pub struct Location {
-    from: Rc<Source>,
+    source: Rc<Source>,
     position: Range<Position>,
 }
 
@@ -83,9 +80,14 @@ impl Location {
     /// Unifica un rango de ubicaciones. Se asume el mismo origen.
     pub fn span(from: Location, to: &Location) -> Self {
         Location {
-            from: from.from,
+            source: from.source,
             position: from.position.start..to.position.end,
         }
+    }
+
+    /// Obtiene el origen asociado a esta ubicación.
+    pub fn source(&self) -> &Source {
+        &self.source
     }
 
     /// Obtiene la posición de inicio.
@@ -101,7 +103,7 @@ impl Location {
 
 impl Display for Location {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{}:", self.from.name)?;
+        write!(formatter, "{}:", self.source.name)?;
 
         let Range { start, end } = self.position;
         if end == start.advance() {
@@ -160,15 +162,6 @@ impl Position {
             column: 1,
         }
     }
-
-    /// Ajusta la posición a la siguiente columna de tabulador.
-    pub fn tab(self) -> Position {
-        let column = 1 + ((self.column - 1) / TAB_STOP + 1) * TAB_STOP;
-        Position {
-            line: self.line,
-            column,
-        }
-    }
 }
 
 impl Default for Position {
@@ -180,6 +173,30 @@ impl Default for Position {
 impl Display for Position {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         write!(formatter, "{}:{}", self.line, self.column)
+    }
+}
+
+/// Nombre de origen e histórico interior de líneas.
+pub struct Source {
+    name: String,
+    lines: RefCell<Vec<String>>,
+}
+
+impl Source {
+    /// Realiza una operación con una línea fuente.
+    pub fn with_line<R, F>(&self, number: u32, callback: F) -> R
+    where
+        F: FnOnce(&str) -> R,
+    {
+        assert!(number >= 1);
+
+        let lines = self.lines.borrow();
+        callback(
+            lines
+                .get((number - 1) as usize)
+                .map(String::as_str)
+                .unwrap_or(""),
+        )
     }
 }
 
@@ -201,7 +218,7 @@ where
     });
 
     let start = Location {
-        from: Rc::clone(&source),
+        source: Rc::clone(&source),
         position: Position::default()..Position::default().advance(),
     };
 
@@ -212,6 +229,7 @@ where
             let source = Rc::clone(&source);
 
             Fallible::new(line.map(move |line| {
+                let line = expand_tabs(&line);
                 let line_chars: Vec<_> = line.chars().collect();
                 source.lines.borrow_mut().push(line);
 
@@ -227,13 +245,12 @@ where
 
                         let next = match c {
                             '\n' => here.newline(),
-                            '\t' => here.tab(),
                             _ => here.advance(),
                         };
 
                         column = next.column;
                         let location = Location {
-                            from: Rc::clone(&source),
+                            source: Rc::clone(&source),
                             position: next..next.advance(),
                         };
 
@@ -247,10 +264,31 @@ where
     (start, chars)
 }
 
-/// Nombre de origen e histórico interior de líneas.
-struct Source {
-    name: String,
-    lines: RefCell<Vec<String>>,
+/// Simplifica tabulaciones a espacios.
+fn expand_tabs(tabbed: &str) -> String {
+    const TAB_STOP: usize = 4;
+
+    let mut distance_to_tab = TAB_STOP;
+    tabbed
+        .chars()
+        .map(move |c| {
+            let (c, count) = match c {
+                '\t' => (' ', std::mem::replace(&mut distance_to_tab, TAB_STOP)),
+
+                _ => {
+                    distance_to_tab -= 1;
+                    if distance_to_tab == 0 {
+                        distance_to_tab = TAB_STOP;
+                    }
+
+                    (c, 1)
+                }
+            };
+
+            iter::repeat(c).take(count)
+        })
+        .flatten()
+        .collect()
 }
 
 /// Un iterador que emite un solo error o encapsula las salidas de

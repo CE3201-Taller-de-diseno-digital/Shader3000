@@ -49,12 +49,14 @@ impl Display for Diagnostics {
             let location = error.location();
             writeln!(fmt, " --> {}", location)?;
 
+            //FIXME: Demasiado indecente
             let digits = location.end().line().to_string().chars().count();
             writeln!(fmt, "{:digits$} |", "", digits = digits)?;
 
             for line_number in location.start().line()..=location.end().line() {
-                let line = "TODO";
-                writeln!(fmt, "{:>digits$} | {}", line_number, line, digits = digits)?;
+                location.source().with_line(line_number, |line| {
+                    writeln!(fmt, "{:>digits$} | {}", line_number, line, digits = digits)
+                })?
             }
 
             let (from, to) = (location.start().column(), location.end().column() - 1);
@@ -63,6 +65,7 @@ impl Display for Diagnostics {
 
             let skip = (min - 1) as usize;
             let highlight = (max - min + 1) as usize;
+
             writeln!(
                 fmt,
                 "{:digits$} | {:skip$}{:^<highlight$}",
