@@ -64,12 +64,24 @@ pub enum Statement {
 
 #[derive(Debug)]
 pub enum Expr {
-    True(Located<()>),
-    False(Located<()>),
-    Integer(Located<i32>),
-    Read(Located<Target>),
+    True,
+    False,
+    Integer(i32),
+    Read(Target),
+    List(Vec<Located<Expr>>),
     Negate(Box<Located<Expr>>),
-    Binary(Box<Located<Expr>>, BinOp, Box<Located<Expr>>),
+    Binary {
+        limits: ExprLimits,
+        lhs: Box<Located<Expr>>,
+        op: BinOp,
+        rhs: Box<Located<Expr>>,
+    },
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum ExprLimits {
+    Free,
+    Enclosed,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -140,6 +152,9 @@ pub enum ParserError {
     #[error("Expected expression")]
     ExpectedExpr,
 
+    #[error("Expected operator, found {0}")]
+    ExpectedOperator(Token),
+
     #[error("Missing type annotation for procedure parameter")]
     MissingParameterType,
 
@@ -187,6 +202,80 @@ impl Failure {
         match self {
             Failure::Weak(error) => error,
             Failure::Strict(error) => error,
+        }
+    }
+}
+
+impl Expr {
+    fn join(expr: Located<Expr>, tail_op: BinOp, tail: Located<Expr>) -> Located<Expr> {
+        use ExprLimits::*;
+
+        let (current_location, expr) = expr.split();
+        let location = Location::span(current_location.clone(), &tail.location());
+
+        let (lhs, dominant_op, rhs) = match expr {
+            Expr::Binary {
+                limits: Free,
+                lhs,
+                op,
+                rhs,
+            } if tail_op.rotates(op) => (lhs, op, Expr::join(*rhs, tail_op, tail)),
+
+            _ => (Box::new(Located::at(expr, current_location)), tail_op, tail),
+        };
+
+        let expr = Expr::Binary {
+            limits: Free,
+            lhs,
+            op: dominant_op,
+            rhs: Box::new(rhs),
+        };
+
+        Located::at(expr, location)
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum Associativity {
+    Left,
+    Right,
+}
+
+impl BinOp {
+    fn rotates(self, other: BinOp) -> bool {
+        use std::cmp::Ordering;
+
+        match self.precedence().cmp(&other.precedence()) {
+            Ordering::Less => false,
+            Ordering::Greater => true,
+            Ordering::Equal => self.associativity() == Associativity::Right,
+        }
+    }
+
+    fn precedence(self) -> u32 {
+        use BinOp::*;
+
+        match self {
+            Equal => 0,
+            NotEqual => 0,
+            Less => 0,
+            LessOrEqual => 0,
+            Greater => 0,
+            GreaterOrEqual => 0,
+            Add => 1,
+            Sub => 1,
+            Mul => 2,
+            Div => 2,
+            Mod => 2,
+            IntegerDiv => 2,
+            Pow => 3,
+        }
+    }
+
+    fn associativity(self) -> Associativity {
+        match self {
+            BinOp::Pow => Associativity::Right,
+            _ => Associativity::Left,
         }
     }
 }
@@ -249,7 +338,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
     }
 
     fn statement(&mut self) -> Parse<Statement> {
-        match self.lookahead(|s| s.next().map(Located::into_inner))? {
+        match self.lookahead(Parser::next)?.into_inner() {
             Token::Keyword(Keyword::If) => self.if_statement(),
             Token::Keyword(Keyword::For) => self.for_statement(),
             Token::Keyword(Keyword::Call) => self.user_call(),
@@ -426,15 +515,92 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
     }
 
     fn expr(&mut self) -> Parse<Located<Expr>> {
-        //TODO
-        let (location, token) = self.next()?.split();
-        match token {
-            Token::IntLiteral(integer) => Ok(Located::at(
-                Expr::Integer(Located::at(integer, location.clone())),
-                location.clone(),
-            )),
+        let mut expr = self.delimited_expr()?;
+        while let Some(op) = self.optional(Parser::binary_operator)? {
+            let tail = self.delimited_expr().map_err(Failure::strict)?;
+            expr = Expr::join(expr, op, tail);
+        }
 
-            _ => self.fail(ParserError::ExpectedExpr).map_err(Failure::weak),
+        Ok(expr)
+    }
+
+    fn delimited_expr(&mut self) -> Parse<Located<Expr>> {
+        let terminal = |s: &mut _, expr| {
+            let (location, _) = Parser::next(s)?.split();
+            Ok((expr, location))
+        };
+
+        let (expr, location) = match self.lookahead(Parser::next)?.into_inner() {
+            Token::Keyword(Keyword::True) => terminal(self, Expr::True)?,
+            Token::Keyword(Keyword::False) => terminal(self, Expr::True)?,
+            Token::IntLiteral(integer) => terminal(self, Expr::Integer(integer))?,
+
+            Token::Minus => {
+                let (start, _) = self.next()?.split();
+                let sub = self.delimited_expr().map_err(Failure::strict)?;
+                let location = Location::span(start, sub.location());
+
+                (Expr::Negate(Box::new(sub)), location)
+            }
+
+            Token::OpenParen => {
+                let (start, _) = self.next()?.split();
+                let expr = match self.expr().map_err(Failure::strict)?.into_inner() {
+                    Expr::Binary { lhs, op, rhs, .. } => Expr::Binary {
+                        limits: ExprLimits::Enclosed,
+                        lhs,
+                        op,
+                        rhs,
+                    },
+
+                    expr => expr,
+                };
+
+                self.expect(Token::CloseParen)?;
+                (expr, Location::span(start, &self.last_known))
+            }
+
+            Token::OpenSquare => {
+                let (start, _) = self.next()?.split();
+                let items = self.comma_separated(Parser::expr, true)?;
+
+                self.expect(Token::CloseSquare)?;
+                (Expr::List(items), Location::span(start, &self.last_known))
+            }
+
+            Token::Id(_) => {
+                let (location, target) = self.target()?.split();
+                (Expr::Read(target), location)
+            }
+
+            _ => self
+                .fail(ParserError::ExpectedExpr)
+                .map_err(Failure::weak)?,
+        };
+
+        Ok(Located::at(expr, location))
+    }
+
+    fn binary_operator(&mut self) -> Parse<BinOp> {
+        use BinOp::*;
+
+        match self.next()?.into_inner() {
+            Token::Plus => Ok(Add),
+            Token::Minus => Ok(Sub),
+            Token::Times => Ok(Mul),
+            Token::Pow => Ok(Pow),
+            Token::Div => Ok(Div),
+            Token::Mod => Ok(Mod),
+            Token::IntegerDiv => Ok(IntegerDiv),
+            Token::Equal => Ok(Equal),
+            Token::NotEqual => Ok(NotEqual),
+            Token::Less => Ok(Less),
+            Token::LessOrEqual => Ok(LessOrEqual),
+            Token::Greater => Ok(Greater),
+            Token::GreaterOrEqual => Ok(GreaterOrEqual),
+            token => self
+                .fail(ParserError::ExpectedOperator(token))
+                .map_err(Failure::weak),
         }
     }
 
