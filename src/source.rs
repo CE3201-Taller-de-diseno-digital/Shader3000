@@ -7,14 +7,19 @@
 //! arbitraria.
 
 use std::{
+    cell::RefCell,
     fmt::{self, Debug, Display, Formatter},
-    io, iter,
+    io::{self, BufRead},
+    iter,
     ops::Range,
     rc::Rc,
 };
 
-/// Un flujo de entrada es cualquier flujo de caracteres.
-pub trait InputStream = Iterator<Item = Result<char, io::Error>>;
+/// Ancho de los divisores de tabulador.
+const TAB_STOP: u32 = 4;
+
+/// Un flujo de entrada, carácter por carácter.
+pub trait InputStream = Iterator<Item = Result<(char, Location), io::Error>>;
 
 /// Un objeto cualquiera con una posición original asociada.
 #[derive(Debug, Clone)]
@@ -68,16 +73,19 @@ impl<T> AsRef<T> for Located<T> {
 }
 
 /// Una ubicación está conformada por un origen y un rango de posiciones.
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct Location {
-    from: SourceName,
+    from: Rc<Source>,
     position: Range<Position>,
 }
 
 impl Location {
-    /// Construye una ubicación.
-    pub fn new(from: SourceName, position: Range<Position>) -> Self {
-        Location { from, position }
+    /// Unifica un rango de ubicaciones. Se asume el mismo origen.
+    pub fn span(from: Location, to: &Location) -> Self {
+        Location {
+            from: from.from,
+            position: from.position.start..to.position.end,
+        }
     }
 
     /// Obtiene la posición de inicio.
@@ -89,19 +97,11 @@ impl Location {
     pub fn end(&self) -> Position {
         self.position.end
     }
-
-    /// Unifica un rango de ubicaciones. Se asume el mismo origen.
-    pub fn span(from: Location, to: &Location) -> Self {
-        Location {
-            from: from.from,
-            position: from.position.start..to.position.end,
-        }
-    }
 }
 
 impl Display for Location {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        write!(formatter, "{}:", self.from)?;
+        write!(formatter, "{}:", self.from.name)?;
 
         let Range { start, end } = self.position;
         if end == start.advance() {
@@ -116,26 +116,6 @@ impl Display for Location {
 impl Debug for Location {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         <Self as Display>::fmt(self, formatter)
-    }
-}
-
-/// Un identificador de flujo origen.
-///
-/// La cadena es arbitraria y no se interpreta de ninguna forma.
-/// Su propósito es añadir información a mensajes de error.
-#[derive(Default, Clone)]
-pub struct SourceName(Rc<String>);
-
-impl SourceName {
-    /// Construye un origen.
-    pub fn from<N: Into<String>>(name: N) -> Self {
-        SourceName(Rc::new(name.into()))
-    }
-}
-
-impl Display for SourceName {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        Display::fmt(&self.0, formatter)
     }
 }
 
@@ -180,6 +160,15 @@ impl Position {
             column: 1,
         }
     }
+
+    /// Ajusta la posición a la siguiente columna de tabulador.
+    pub fn tab(self) -> Position {
+        let column = 1 + ((self.column - 1) / TAB_STOP + 1) * TAB_STOP;
+        Position {
+            line: self.line,
+            column,
+        }
+    }
 }
 
 impl Default for Position {
@@ -197,14 +186,71 @@ impl Display for Position {
 /// Transforma un flujo de entrada estándar en uno que itera por carácter.
 ///
 /// Esta función existe debido a que `std` no ofrece algún mecanismo
-/// no trivial para realizar la misma operación.
-pub fn consume<R: io::BufRead>(reader: R) -> impl InputStream {
-    let line_chars = |line: String| line.chars().collect::<Vec<char>>().into_iter();
-    reader
+/// no trivial para realizar la misma operación. La ubicación que se
+/// encuentra en la tupla de retorno es la posición que le corresponderá
+/// al primer caracter en la salida. Cada carácter emitido incluye a la
+/// ubicación del siguiente.
+pub fn consume<R, S>(reader: R, name: S) -> (Location, impl InputStream)
+where
+    R: BufRead,
+    S: Into<String>,
+{
+    let source = Rc::new(Source {
+        name: name.into(),
+        lines: Default::default(),
+    });
+
+    let start = Location {
+        from: Rc::clone(&source),
+        position: Position::default()..Position::default().advance(),
+    };
+
+    let chars = reader
         .lines()
-        .map(move |line| Fallible::new(line.map(line_chars)))
+        .enumerate()
+        .map(move |(line_index, line)| {
+            let source = Rc::clone(&source);
+
+            Fallible::new(line.map(move |line| {
+                let line_chars: Vec<_> = line.chars().collect();
+                source.lines.borrow_mut().push(line);
+
+                let mut column = 1;
+                line_chars
+                    .into_iter()
+                    .chain(iter::once('\n'))
+                    .map(move |c| {
+                        let here = Position {
+                            line: line_index as u32 + 1,
+                            column,
+                        };
+
+                        let next = match c {
+                            '\n' => here.newline(),
+                            '\t' => here.tab(),
+                            _ => here.advance(),
+                        };
+
+                        column = next.column;
+                        let location = Location {
+                            from: Rc::clone(&source),
+                            position: next..next.advance(),
+                        };
+
+                        (c, location)
+                    })
+            }))
+        })
         .flatten()
-        .fuse()
+        .fuse();
+
+    (start, chars)
+}
+
+/// Nombre de origen e histórico interior de líneas.
+struct Source {
+    name: String,
+    lines: RefCell<Vec<String>>,
 }
 
 /// Un iterador que emite un solo error o encapsula las salidas de

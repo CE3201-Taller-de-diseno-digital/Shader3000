@@ -149,10 +149,13 @@ pub enum ParserError {
 
 pub trait TokenStream<'a> = Iterator<Item = &'a Located<Token>> + Clone;
 
-pub fn parse<'a>(tokens: impl TokenStream<'a>) -> Result<Ast, Located<ParserError>> {
+pub fn parse<'a, T>(tokens: T, empty_location: Location) -> Result<Ast, Located<ParserError>>
+where
+    T: TokenStream<'a>,
+{
     let mut parser = Parser {
         tokens: tokens.peekable(),
-        last_known: Location::default(),
+        last_known: empty_location,
         lifetime_hack: PhantomData,
     };
 

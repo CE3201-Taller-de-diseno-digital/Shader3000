@@ -29,12 +29,13 @@
 //! ejecución, pero no lo suficiente como para permitir el avance a las
 //! demás fases de la compilación.
 
-use crate::source::{InputStream, Located, Location, Position, SourceName};
+use crate::source::{InputStream, Located, Location};
 use std::{
     fmt::{self, Display},
     rc::Rc,
     str::FromStr,
 };
+
 use thiserror::Error;
 
 /// Límite de longitud de identificadores.
@@ -285,10 +286,9 @@ impl FromStr for Keyword {
 /// encontrado en el flujo de entrada.
 pub struct Lexer<S: Iterator> {
     source: std::iter::Peekable<S>,
-    from: SourceName,
     state: State,
-    start: Position,
-    next: Position,
+    start: Location,
+    next: Location,
 }
 
 /// Posibles estados del lexer.
@@ -353,14 +353,14 @@ enum State {
 }
 
 impl<S: InputStream> Lexer<S> {
-    /// Crea un lexer en estado inicial a partir de un flujo y su origen.
-    pub fn new(source: S, from: SourceName) -> Self {
+    /// Crea un lexer en estado inicial a partir de un flujo.
+    pub fn new(start: Location, source: S) -> Self {
+        let next = start.clone();
         Lexer {
-            from,
             source: source.peekable(),
             state: State::Start,
-            start: Default::default(),
-            next: Default::default(),
+            start,
+            next,
         }
     }
 
@@ -393,16 +393,24 @@ impl<S: InputStream> Lexer<S> {
     }
 
     /// Intenta construir un siguiente token.
-    fn lex(&mut self) -> Result<Option<Token>, LexerError> {
+    fn lex(&mut self) -> Result<Option<(Token, Location)>, LexerError> {
         use {State::*, Token::*};
 
+        let mut last_accepted = self.start.clone();
         let token = loop {
             // Se espera un siguiente carácter, fallando si hay error de E/S
             let next_char = match self.source.peek() {
                 None => None,
-                Some(Ok(c)) => Some(*c),
-                Some(Err(_)) => break Err(self.source.next().unwrap().unwrap_err().into()),
+                Some(Ok((c, _))) => Some(*c),
+                Some(Err(_)) => break Err(self.source.next().unwrap().err().unwrap().into()),
             };
+
+            // La posición de origen se mueve junto a la posición
+            // siguiente siempre que no se haya encontrado una
+            // frontera de token
+            if let Start = self.state {
+                self.start = self.next.clone();
+            }
 
             // Switch table principal, determina cambios de estado
             // y de salida del lexer a partir de combinaciones del
@@ -520,7 +528,6 @@ impl<S: InputStream> Lexer<S> {
                     if let Ok(keyword) = self::Keyword::from_str(&word) {
                         break Ok(Keyword(keyword));
                     } else if word.chars().nth(0).unwrap().is_ascii_uppercase() {
-                        self.start = self.next;
                         break Err(LexerError::UppercaseId);
                     } else {
                         break Ok(Id(Identifier(Rc::new(std::mem::take(word)))));
@@ -530,17 +537,12 @@ impl<S: InputStream> Lexer<S> {
 
             // Si no hubo `continue`, aquí se consume el carácter que
             // se observó con lookahead anteriormente
-            self.source.next();
-
-            // Cambios en la posición del cursor
-            match next_char {
-                Some('\n') => self.next = self.next.newline(),
-                Some(_) => self.next = self.next.advance(),
-                None => (),
+            if let Some(Ok((_, next_position))) = self.source.next() {
+                last_accepted = std::mem::replace(&mut self.next, next_position);
             }
         };
 
-        token.map(Some)
+        token.map(|token| Some((token, last_accepted)))
     }
 }
 
@@ -550,24 +552,16 @@ impl<S: InputStream> Iterator for Lexer<S> {
     fn next(&mut self) -> Option<Self::Item> {
         match self.lex() {
             Ok(None) => None,
-            Ok(Some(token)) => {
-                let range = self.start..self.next;
-                let next = Located::at(token, Location::new(self.from.clone(), range));
-
-                self.start = self.next;
+            Ok(Some((token, last_accepted))) => {
                 self.state = State::Start;
 
-                Some(Ok(next))
+                let location = Location::span(self.start.clone(), &last_accepted);
+                Some(Ok(Located::at(token, location)))
             }
 
             Err(error) => {
                 self.state = State::Error;
-
-                let range = self.next..self.next.advance();
-                Some(Err(Located::at(
-                    error,
-                    Location::new(self.from.clone(), range),
-                )))
+                Some(Err(Located::at(error, self.next.clone())))
             }
         }
     }
