@@ -127,20 +127,11 @@ pub enum Selector {
 #[non_exhaustive]
 #[derive(Error, Debug)]
 pub enum ParserError {
-    #[error("No parameters were especified for procedure")]
-    MissingProcedureParameters,
-
-    #[error("Missing operand in sequence")]
-    MissingOperand,
-
     #[error("Expected {0}, found {1}")]
     UnexpectedToken(Token, Token),
 
     #[error("Expected {0}, no token was found instead")]
     MissingToken(Token),
-
-    #[error("Expected  \",\" or \")\"")]
-    MissingSeparationToken,
 
     #[error("Expected identifier")]
     ExpectedId,
@@ -284,6 +275,21 @@ impl BinOp {
 
 type Parse<T> = Result<T, Failure>;
 
+trait ParseExt {
+    fn weak(self) -> Self;
+    fn strict(self) -> Self;
+}
+
+impl<T> ParseExt for Parse<T> {
+    fn weak(self) -> Self {
+        self.map_err(Failure::weak)
+    }
+
+    fn strict(self) -> Self {
+        self.map_err(Failure::strict)
+    }
+}
+
 impl<'a, I: TokenStream<'a>> Parser<'a, I> {
     fn program(&mut self) -> Parse<Ast> {
         let mut procedures = Vec::new();
@@ -312,11 +318,16 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
     }
 
     fn parameter(&mut self) -> Parse<Parameter> {
-        let name = self.id().map_err(Failure::weak)?;
+        let name = self.id().weak()?;
 
-        self.expect(Token::Colon)?;
+        self.expect(Token::Colon).map_err(|_| {
+            Failure::Strict(Located::at(
+                ParserError::MissingParameterType,
+                name.location().clone(),
+            ))
+        })?;
+
         let of = self.typ()?;
-
         Ok(Parameter { name, of })
     }
 
@@ -347,7 +358,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
 
             Token::Id(_) => {
                 let targets = self.comma_separated(Parser::target, false)?;
-                match self.lookahead(|s| s.expect(Token::Assign).map_err(Failure::weak)) {
+                match self.lookahead(|s| s.expect(Token::Assign).weak()) {
                     Err(Failure::Weak(_)) if targets.len() == 1 => {
                         self.method_call(targets.into_iter().next().unwrap())
                     }
@@ -361,15 +372,14 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
 
             _ => {
                 self.next()?;
-                self.fail(ParserError::ExpectedStatement)
-                    .map_err(Failure::weak)
+                self.fail(ParserError::ExpectedStatement).weak()
             }
         }
     }
 
     fn if_statement(&mut self) -> Parse<Statement> {
         self.keyword(Keyword::If)?;
-        let condition = self.expr().map_err(Failure::strict)?;
+        let condition = self.expr().strict()?;
         let body = self.statement_block()?;
 
         Ok(Statement::If { condition, body })
@@ -380,13 +390,13 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
         let variable = self.id()?;
 
         self.keyword(Keyword::In)?;
-        let iterable = self.expr().map_err(Failure::strict)?;
+        let iterable = self.expr().strict()?;
 
-        let step = match self.attempt(|s| s.keyword(Keyword::Step).map_err(Failure::weak)) {
+        let step = match self.attempt(|s| s.keyword(Keyword::Step).weak()) {
             Err(Failure::Weak(_)) => None,
             result => {
                 result?;
-                Some(self.expr().map_err(Failure::strict)?)
+                Some(self.expr().strict()?)
             }
         };
 
@@ -430,7 +440,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
 
     fn id_call(&mut self) -> Parse<(Located<Identifier>, Vec<Located<Expr>>)> {
         let id = self.id()?;
-        let args = match self.attempt(|s| s.expect(Token::OpenParen).map_err(Failure::weak)) {
+        let args = match self.attempt(|s| s.expect(Token::OpenParen).weak()) {
             Err(Failure::Weak(_)) => Vec::new(),
 
             result => {
@@ -466,11 +476,11 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
     }
 
     fn index(&mut self) -> Parse<Located<Index>> {
-        self.expect(Token::OpenSquare).map_err(Failure::weak)?;
+        self.expect(Token::OpenSquare).weak()?;
         let start = self.last_known.clone();
 
         let first = self.selector()?;
-        let index = match self.attempt(|s| s.expect(Token::Comma).map_err(Failure::weak)) {
+        let index = match self.attempt(|s| s.expect(Token::Comma).weak()) {
             Err(Failure::Weak(_)) => Index::Direct(first),
 
             result => {
@@ -489,13 +499,13 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
 
     fn selector(&mut self) -> Parse<Selector> {
         let start = self.optional(Parser::expr)?;
-        let colon = self.attempt(|s| s.expect(Token::Colon).map_err(Failure::weak));
+        let colon = self.attempt(|s| s.expect(Token::Colon).weak());
 
         match (start, colon) {
             (Some(start), Err(Failure::Weak(_))) => Ok(Selector::Single(start)),
 
             (start, result) => {
-                result.map_err(Failure::strict)?;
+                result.strict()?;
                 let end = self.optional(Parser::expr)?;
 
                 Ok(Selector::Range { start, end })
@@ -511,7 +521,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
             Token::Keyword(Keyword::List) => Type::List,
             Token::Keyword(Keyword::Type) => {
                 self.expect(Token::OpenParen)?;
-                let expr = self.expr().map_err(Failure::strict)?;
+                let expr = self.expr().strict()?;
                 self.expect(Token::CloseParen)?;
 
                 Type::Of(expr)
@@ -526,7 +536,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
     fn expr(&mut self) -> Parse<Located<Expr>> {
         let mut expr = self.delimited_expr()?;
         while let Some(op) = self.optional(Parser::binary_operator)? {
-            let tail = self.delimited_expr().map_err(Failure::strict)?;
+            let tail = self.delimited_expr().strict()?;
             expr = Expr::join(expr, op, tail);
         }
 
@@ -548,7 +558,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
                 let (start, _) = self.next()?.split();
                 self.expect(Token::OpenParen)?;
 
-                let inner = self.expr().map_err(Failure::strict)?;
+                let inner = self.expr().strict()?;
 
                 self.expect(Token::CloseParen)?;
                 (
@@ -559,7 +569,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
 
             Token::Minus => {
                 let (start, _) = self.next()?.split();
-                let inner = self.delimited_expr().map_err(Failure::strict)?;
+                let inner = self.delimited_expr().strict()?;
                 let location = Location::span(start, inner.location());
 
                 (Expr::Negate(Box::new(inner)), location)
@@ -567,7 +577,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
 
             Token::OpenParen => {
                 let (start, _) = self.next()?.split();
-                let expr = match self.expr().map_err(Failure::strict)?.into_inner() {
+                let expr = match self.expr().strict()?.into_inner() {
                     Expr::Binary { lhs, op, rhs, .. } => Expr::Binary {
                         limits: ExprLimits::Enclosed,
                         lhs,
@@ -595,9 +605,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
                 (Expr::Read(target), location)
             }
 
-            _ => self
-                .fail(ParserError::ExpectedExpr)
-                .map_err(Failure::weak)?,
+            _ => self.fail(ParserError::ExpectedExpr).weak()?,
         };
 
         Ok(Located::at(expr, location))
@@ -620,9 +628,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
             Token::LessOrEqual => Ok(LessOrEqual),
             Token::Greater => Ok(Greater),
             Token::GreaterOrEqual => Ok(GreaterOrEqual),
-            token => self
-                .fail(ParserError::ExpectedOperator(token))
-                .map_err(Failure::weak),
+            token => self.fail(ParserError::ExpectedOperator(token)).weak(),
         }
     }
 
@@ -663,15 +669,15 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
     {
         let mut items = match self.attempt(|s| rule(s)) {
             Err(Failure::Weak(_)) if allow_empty => return Ok(Vec::new()),
-            item => vec![item.map_err(Failure::strict)?],
+            item => vec![item.strict()?],
         };
 
         loop {
-            match self.attempt(|s| s.expect(Token::Comma).map_err(Failure::weak)) {
+            match self.attempt(|s| s.expect(Token::Comma).weak()) {
                 Err(Failure::Weak(_)) => break Ok(items),
                 result => {
                     result?;
-                    items.push(rule(self).map_err(Failure::strict)?);
+                    items.push(rule(self).strict()?);
                 }
             }
         }
