@@ -137,7 +137,7 @@ pub enum ParserError {
     #[error("Expected any of `int`, `bool`, `list`")]
     ExpectedType,
 
-    #[error("Expected an expression")]
+    #[error("Expected expression")]
     ExpectedExpr,
 
     #[error("Missing type annotation for procedure parameter")]

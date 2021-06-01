@@ -80,6 +80,16 @@ impl Location {
         Location { from, position }
     }
 
+    /// Obtiene la posición de inicio.
+    pub fn start(&self) -> Position {
+        self.position.start
+    }
+
+    /// Obtiene la posición de fin.
+    pub fn end(&self) -> Position {
+        self.position.end
+    }
+
     /// Unifica un rango de ubicaciones. Se asume el mismo origen.
     pub fn span(from: Location, to: &Location) -> Self {
         Location {

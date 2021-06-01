@@ -1,4 +1,5 @@
 use compiler::{
+    error::Diagnostics,
     lex::Lexer,
     parse,
     source::{self, SourceName},
@@ -9,12 +10,20 @@ fn main() {
     let mut stdin = stdin.lock();
 
     let lexer = Lexer::new(source::consume(&mut stdin), SourceName::from("<stdin>"));
-    match lexer.try_exhaustive() {
-        Err(errors) => eprintln!("{:#?}", errors),
+    let diagnostics = match lexer.try_exhaustive() {
+        Err(errors) => Diagnostics::from(errors),
         Ok(tokens) => {
-            println!("Tokens: {:#?}", tokens);
-            println!();
-            println!("{:#?}", parse::parse(tokens.iter()));
+            print!("Tokens: {:#?}\n\n", tokens);
+
+            match parse::parse(tokens.iter()) {
+                Err(error) => Diagnostics::from(error),
+                Ok(ast) => {
+                    println!("{:#?}", ast);
+                    Diagnostics::default()
+                }
+            }
         }
-    }
+    };
+
+    eprint!("{}", diagnostics);
 }
