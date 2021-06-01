@@ -4,7 +4,7 @@ use std::{iter::Peekable, marker::PhantomData};
 use thiserror::Error;
 
 use crate::{
-    lex::{Identifier, Keyword, Token},
+    lex::{Identifier, Keyword, NoCase, Token},
     source::{Located, Location},
 };
 
@@ -61,6 +61,45 @@ pub enum Statement {
         method: Located<Identifier>,
         args: Vec<Located<Expr>>,
     },
+
+    Blink {
+        column: Located<Expr>,
+        row: Located<Expr>,
+        count: Located<Expr>,
+        unit: TimeUnit,
+        state: Located<Expr>,
+    },
+
+    Delay {
+        count: Located<Expr>,
+        unit: TimeUnit,
+    },
+
+    PrintLed {
+        column: Located<Expr>,
+        row: Located<Expr>,
+        value: Located<Expr>,
+    },
+
+    PrintLedX {
+        kind: ObjectKind,
+        index: Located<Expr>,
+        object: Located<Expr>,
+    },
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum TimeUnit {
+    Millis,
+    Seconds,
+    Minutes,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum ObjectKind {
+    Column,
+    Row,
+    Matrix,
 }
 
 #[derive(Debug)]
@@ -142,11 +181,14 @@ pub enum ParserError {
     #[error("Expected any of `int`, `bool`, `list`")]
     ExpectedType,
 
-    #[error("Expected expression")]
-    ExpectedExpr,
+    #[error("Expected expression, found {0}")]
+    ExpectedExpr(Token),
 
     #[error("Expected operator, found {0}")]
     ExpectedOperator(Token),
+
+    #[error("Expected option")]
+    ExpectedOption,
 
     #[error("Missing type annotation for procedure parameter")]
     MissingParameterType,
@@ -355,6 +397,10 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
             Token::Keyword(Keyword::If) => self.if_statement(),
             Token::Keyword(Keyword::For) => self.for_statement(),
             Token::Keyword(Keyword::Call) => self.user_call(),
+            Token::Keyword(Keyword::Blink) => self.blink(),
+            Token::Keyword(Keyword::Delay) => self.delay(),
+            Token::Keyword(Keyword::PrintLed) => self.print_led(),
+            Token::Keyword(Keyword::PrintLedX) => self.print_led_x(),
 
             Token::Id(_) => {
                 let targets = self.comma_separated(Parser::target, false)?;
@@ -416,6 +462,125 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
         self.expect(Token::Semicolon)?;
 
         Ok(Statement::UserCall { procedure, args })
+    }
+
+    fn blink(&mut self) -> Parse<Statement> {
+        self.keyword(Keyword::Blink)?;
+        self.expect(Token::OpenParen)?;
+
+        let column = self.expr().strict()?;
+        self.expect(Token::Comma)?;
+
+        let row = self.expr().strict()?;
+        self.expect(Token::Comma)?;
+
+        let count = self.expr().strict()?;
+        self.expect(Token::Comma)?;
+
+        let unit = self.time_unit()?;
+        self.expect(Token::Comma)?;
+
+        let state = self.expr().strict()?;
+        self.expect(Token::CloseParen)?;
+        self.expect(Token::Semicolon)?;
+
+        Ok(Statement::Blink {
+            column,
+            row,
+            count,
+            unit,
+            state,
+        })
+    }
+
+    fn delay(&mut self) -> Parse<Statement> {
+        self.keyword(Keyword::Delay)?;
+        self.expect(Token::OpenParen)?;
+
+        let count = self.expr().strict()?;
+        self.expect(Token::Comma)?;
+
+        let unit = self.time_unit()?;
+        self.expect(Token::CloseParen)?;
+        self.expect(Token::Semicolon)?;
+
+        Ok(Statement::Delay { count, unit })
+    }
+
+    fn print_led(&mut self) -> Parse<Statement> {
+        self.keyword(Keyword::PrintLed)?;
+        self.expect(Token::OpenParen)?;
+
+        let column = self.expr().strict()?;
+        self.expect(Token::Comma)?;
+
+        let row = self.expr().strict()?;
+        self.expect(Token::Comma)?;
+
+        let value = self.expr().strict()?;
+        self.expect(Token::CloseParen)?;
+        self.expect(Token::Semicolon)?;
+
+        Ok(Statement::PrintLed { column, row, value })
+    }
+
+    fn print_led_x(&mut self) -> Parse<Statement> {
+        self.keyword(Keyword::PrintLedX)?;
+        self.expect(Token::OpenParen)?;
+
+        const KINDS: &'static [(NoCase<&'static str>, ObjectKind)] = &[
+            (NoCase::new("c"), ObjectKind::Column),
+            (NoCase::new("f"), ObjectKind::Row),
+            (NoCase::new("m"), ObjectKind::Matrix),
+        ];
+
+        let kind = self.choose_str(KINDS)?;
+        self.expect(Token::Comma)?;
+
+        let index = self.expr().strict()?;
+        self.expect(Token::Comma)?;
+
+        let object = self.expr().strict()?;
+        self.expect(Token::CloseParen)?;
+        self.expect(Token::Semicolon)?;
+
+        Ok(Statement::PrintLedX {
+            kind,
+            index,
+            object,
+        })
+    }
+
+    fn time_unit(&mut self) -> Parse<TimeUnit> {
+        const UNITS: &'static [(NoCase<&'static str>, TimeUnit)] = &[
+            (NoCase::new("mil"), TimeUnit::Millis),
+            (NoCase::new("seg"), TimeUnit::Seconds),
+            (NoCase::new("min"), TimeUnit::Minutes),
+        ];
+
+        self.choose_str(UNITS)
+    }
+
+    fn choose_str<T>(&mut self, options: &'static [(NoCase<&'static str>, T)]) -> Parse<T>
+    where
+        T: Copy,
+    {
+        match self.next()?.into_inner() {
+            Token::StrLiteral(literal) => {
+                let value = options
+                    .iter()
+                    .find(|(key, _)| key == literal.as_ref())
+                    .map(|(_, value)| value);
+
+                if let Some(value) = value {
+                    Ok(*value)
+                } else {
+                    self.fail(ParserError::ExpectedOption)
+                }
+            }
+
+            _ => self.fail(ParserError::ExpectedOption),
+        }
     }
 
     fn method_call(&mut self, target: Located<Target>) -> Parse<Statement> {
@@ -605,7 +770,10 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
                 (Expr::Read(target), location)
             }
 
-            _ => self.fail(ParserError::ExpectedExpr).weak()?,
+            _ => {
+                let token = self.next()?.into_inner();
+                self.fail(ParserError::ExpectedExpr(token)).weak()?
+            }
         };
 
         Ok(Located::at(expr, location))

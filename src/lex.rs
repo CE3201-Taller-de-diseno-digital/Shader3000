@@ -38,6 +38,9 @@ use std::{
 
 use thiserror::Error;
 
+// Case-insensitive
+pub use unicase::Ascii as NoCase;
+
 /// Límite de longitud de identificadores.
 const MAX_ID_LENGTH: usize = 10;
 
@@ -74,7 +77,17 @@ pub enum LexerError {
 ///
 /// Los identificadores cumplen ciertas reglas de contenido y longitud.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Identifier(Rc<String>);
+pub struct Identifier(Rc<NoCase<String>>);
+
+/// Un literal de cadana.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StrLiteral(Rc<NoCase<String>>);
+
+impl AsRef<NoCase<String>> for StrLiteral {
+    fn as_ref(&self) -> &NoCase<String> {
+        &self.0
+    }
+}
 
 /// Objeto resultante del análisis léxico.
 ///
@@ -89,7 +102,7 @@ pub enum Token {
     Keyword(Keyword),
 
     /// Literal de cadena.
-    StrLiteral(String),
+    StrLiteral(StrLiteral),
 
     /// Literal de entero.
     IntLiteral(i32),
@@ -174,7 +187,7 @@ impl Display for Token {
         match self {
             Id(id) => write!(fmt, "identifier `{}`", id.0),
             Keyword(keyword) => write!(fmt, "keyword `{}`", keyword),
-            StrLiteral(string) => write!(fmt, "literal \"{}\"", string),
+            StrLiteral(string) => write!(fmt, "literal \"{}\"", string.0),
             IntLiteral(integer) => write!(fmt, "literal `{}`", integer),
             Assign => fmt.write_str("`=`"),
             Comma => fmt.write_str("`,`"),
@@ -220,6 +233,10 @@ pub enum Keyword {
     Len,
     Call,
     Procedure,
+    Blink,
+    Delay,
+    PrintLed,
+    PrintLedX,
 }
 
 impl Display for Keyword {
@@ -239,6 +256,10 @@ impl Display for Keyword {
             Step => "step",
             Call => "call",
             Procedure => "procedure",
+            Blink => "blink",
+            Delay => "delay",
+            PrintLed => "PrintLed",
+            PrintLedX => "PrintLedX",
         };
 
         fmt.write_str(string)
@@ -249,29 +270,31 @@ impl FromStr for Keyword {
     type Err = ();
 
     fn from_str(string: &str) -> Result<Self, Self::Err> {
-        // "CI" es "Case Insensitive"
-        use unicase::Ascii as CI;
         use Keyword::*;
 
-        const KEYWORDS: &'static [(CI<&'static str>, Keyword)] = &[
-            (CI::new("true"), True),
-            (CI::new("false"), False),
-            (CI::new("type"), Type),
-            (CI::new("list"), List),
-            (CI::new("bool"), Bool),
-            (CI::new("int"), Int),
-            (CI::new("if"), If),
-            (CI::new("for"), For),
-            (CI::new("in"), In),
-            (CI::new("len"), Len),
-            (CI::new("step"), Step),
-            (CI::new("call"), Call),
-            (CI::new("procedure"), Procedure),
+        const KEYWORDS: &'static [(NoCase<&'static str>, Keyword)] = &[
+            (NoCase::new("true"), True),
+            (NoCase::new("false"), False),
+            (NoCase::new("type"), Type),
+            (NoCase::new("list"), List),
+            (NoCase::new("bool"), Bool),
+            (NoCase::new("int"), Int),
+            (NoCase::new("if"), If),
+            (NoCase::new("for"), For),
+            (NoCase::new("in"), In),
+            (NoCase::new("len"), Len),
+            (NoCase::new("step"), Step),
+            (NoCase::new("call"), Call),
+            (NoCase::new("procedure"), Procedure),
+            (NoCase::new("Blink"), Blink),
+            (NoCase::new("Delay"), Delay),
+            (NoCase::new("PrintLed"), PrintLed),
+            (NoCase::new("PrintLedX"), PrintLedX),
         ];
 
         KEYWORDS
             .iter()
-            .find(|&&(name, _)| name == CI::new(string))
+            .find(|&&(name, _)| name == NoCase::new(string))
             .map(|&(_, keyword)| keyword)
             .ok_or(())
     }
@@ -505,7 +528,8 @@ impl<S: InputStream> Lexer<S> {
 
                 // Fin de literales de cadena
                 (StringChars(string), Some('"')) => {
-                    self.state = Complete(StrLiteral(std::mem::take(string)))
+                    let literal = Rc::new(NoCase::new(std::mem::take(string)));
+                    self.state = Complete(Token::StrLiteral(self::StrLiteral(literal)));
                 }
 
                 // Casos entre comillas para literales de cadena
@@ -527,7 +551,7 @@ impl<S: InputStream> Lexer<S> {
                     if let Ok(keyword) = self::Keyword::from_str(&word) {
                         break Ok(Keyword(keyword));
                     } else {
-                        break Ok(Id(Identifier(Rc::new(std::mem::take(word)))));
+                        break Ok(Id(Identifier(Rc::new(NoCase::new(std::mem::take(word))))));
                     }
                 }
             }
