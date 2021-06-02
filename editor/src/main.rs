@@ -2,7 +2,6 @@ extern crate gio;
 extern crate glib;
 extern crate gtk;
 
-//use gdk::InputMode::Screen;
 use gio::prelude::*;
 use glib::clone;
 use gtk::prelude::*;
@@ -12,28 +11,12 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::path::Path;
-use std::rc::Rc;
-
-
-//use gtk::{gdk, gio};
 
 fn main() {
     let application = gtk::Application::new(Some("com.editor.animationLED"), Default::default())
         .expect("Initialization failed...");
 
     application.connect_activate(|app| {
-
-        //let provider = gtk::CssProvider::new();
-        // Load the CSS file
-        //let style = include_bytes!("style.css");
-       // provider.load_from_data(style).expect("Failed to load CSS");
-        // We give the CssProvided to the default screen so the CSS rules we added
-        // can be applied to our window.
-       // gtk::StyleContext::add_provider_for_screen(
-           // &gtk::Screen::default().expect("Error initializing gtk css provider."),
-            //&provider,
-           // gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
-        //);
 
         build_ui(app);
     });
@@ -42,18 +25,7 @@ fn main() {
     application.run(&args().collect::<Vec<_>>());
 }
 
-fn append_text_column(tree: &gtk::TreeView) {
-    let column = gtk::TreeViewColumn::new();
-    let cell = gtk::CellRendererText::new();
-    column.set_title("Project Folder");
-
-    column.pack_start(&cell, true);
-    column.add_attribute(&cell, "text", 0);
-    tree.append_column(&column);
-}
-
 fn build_ui(application: &gtk::Application) {
-    //sourceview::View::static_type();
 
     //               ____________________
     //______________/  Create main window
@@ -70,7 +42,6 @@ fn build_ui(application: &gtk::Application) {
     let provider = gtk::CssProvider::new();
     // Load the CSS file
     provider.load_from_path("editor/src/resources/style.css").unwrap();
-    //let screen = gtk::Screen = window.get_screen().unwrap();
     gtk::StyleContext::add_provider_for_screen(&window.get_screen().unwrap(),&provider,gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
 
     //               ___________________
@@ -84,93 +55,65 @@ fn build_ui(application: &gtk::Application) {
     //File
     let new: gtk::MenuItem = builder.get_object("new").unwrap();
     let open: gtk::MenuItem = builder.get_object("open").unwrap();
-    //let open_folder: gtk::MenuItem = builder.get_object("open_folder").unwrap();
     let save: gtk::MenuItem = builder.get_object("save").unwrap();
     let save_as: gtk::MenuItem = builder.get_object("save_as").unwrap();
     let quit: gtk::MenuItem = builder.get_object("quit").unwrap();
-    //Edit
-    //let cut: gtk::MenuItem = builder.get_object("cut").unwrap();
-    //let copy: gtk::MenuItem = builder.get_object("copy").unwrap();
-    //let paste: gtk::MenuItem = builder.get_object("paste").unwrap();
-    //let delete: gtk::MenuItem = builder.get_object("delete").unwrap();
-    //Theme
-    //let bright :   gtk::MenuItem = builder.get_object("bright").unwrap();
-    //let dark :     gtk::MenuItem = builder.get_object("dark").unwrap();
     //Help
     let about: gtk::MenuItem = builder.get_object("about").unwrap();
     let about_win : gtk::AboutDialog = builder.get_object("about_win").unwrap();
 
     //Scrolled Window
-
     let scroll: gtk::ScrolledWindow = builder.get_object("sourceHold").unwrap();
 
     //SourceView
-    //let sourceview: sourceview::View = builder.get_object("source").unwrap();
-
-    //let buffer : sourceview::Buffer = builder.get_object("textbuffer1").unwrap();
-
     let buffer = sourceview::Buffer::new_with_language(
         &sourceview::LanguageManager::get_default()
             .unwrap()
             .get_language("c")
             .unwrap(),
     );
-
-    //let buffer = sourceview.get_buffer().unwrap() as sourceview::Buffer;
-
     buffer.set_highlight_syntax(true);
 
     let sourceview = sourceview::View::new_with_buffer(&buffer);
-
     sourceview.set_auto_indent(true);
-
     sourceview.set_indent_on_tab(true);
-
     sourceview.set_show_line_numbers(true);
-
     sourceview.set_smart_backspace(true);
 
     scroll.add(&sourceview);
-
-    //print!("{:?}",sourceview::LanguageManager::get_default().unwrap().get_language_ids());
 
     //Themes
     let themes: sourceview::StyleSchemeChooserButton = builder.get_object("themes").unwrap();
 
     //Terminal
     let terminal: gtk::TextView = builder.get_object("terminal").unwrap();
-
-    terminal.set_widget_name("hola");
-    //terminal.
+    terminal.set_widget_name("terminal");
 
     //Notebook
     let doc_name: gtk::Label = builder.get_object("doc_name").unwrap();
 
-    //TreeView
-    //let left_tree: gtk::TreeView = builder.get_object("treeview").unwrap();
-    //let store = gtk::TreeStore::new(&[String::static_type()]);
-    //left_tree.set_model(Some(&store));
-    //Create treeview elements
-    //left_tree.set_model(Some(&store));
-   // left_tree.set_headers_visible(true);
-   // append_text_column(&left_tree);
-
     //File
-    //let mut current_file = "none";
     let current_file = gtk::Label::new(Some("unnamed.txt"));
-    //let mut current_file = Rc::new(current_file);
+
 
     //               ___________________
     //______________/  Add funtionality
 
-    //TODO:comp_run
-    //TODO:comp
+    compile_run.connect_clicked(clone!(@weak window, @weak save => move |_| {
 
-    //let store = Rc::new(store);
-    //let doc_name = Rc::new(doc_name);
+       save.activate();
 
-    new.connect_activate(
-        clone!(@weak sourceview , @weak doc_name, @weak current_file => move |_| {
+    }));
+
+    compile.connect_clicked(clone!(@weak window , @weak save=> move |_| {
+
+        save.activate();
+
+    }));
+
+    new.connect_activate(clone!(@weak sourceview , @weak doc_name, @weak current_file, @weak save => move |_| {
+
+            save.activate();
 
             sourceview
                 .get_buffer()
@@ -188,7 +131,7 @@ fn build_ui(application: &gtk::Application) {
     let doc_name2 = doc_name.clone();
     let current_file2 = current_file.clone();
 
-    open.connect_activate(clone!(@weak window => move |_| {
+    open.connect_activate(clone!(@weak window , @weak save => move |_| {
 
         let file_chooser = gtk::FileChooserDialog::new(
             Some("Open File"),
@@ -199,8 +142,13 @@ fn build_ui(application: &gtk::Application) {
             ("Open", gtk::ResponseType::Ok),
             ("Cancel", gtk::ResponseType::Cancel),
         ]);
-        file_chooser.connect_response(clone!(@weak sourceview2, @weak doc_name2 ,@weak current_file2=> move|file_chooser, response| {
+
+        let save_for_chooser = save.clone();
+
+        file_chooser.connect_response(clone!(@weak sourceview2, @weak doc_name2 ,@weak current_file2 ,@weak save_for_chooser=> move|file_chooser, response| {
             if response == gtk::ResponseType::Ok {
+
+                save_for_chooser.activate();
 
                 let filename = file_chooser.get_filename().expect("Couldn't get filename");
                 let file = File::open(&filename).expect("Couldn't open file");
@@ -213,7 +161,6 @@ fn build_ui(application: &gtk::Application) {
                     .get_buffer()
                     .expect("Couldn't get window")
                     .set_text(&contents);
-
 
                 match filename.to_str() {
                     None => panic!("new path is not a valid UTF-8 sequence"),
@@ -229,58 +176,9 @@ fn build_ui(application: &gtk::Application) {
         file_chooser.show_all();
     }));
 
-    //let store = Rc::new(store);
-
-    //open_folder.connect_activate(clone!(@weak window => move |_| {
-
-        //let store = Rc::clone(&store);
-
-     //   let folder_chooser = gtk::FileChooserDialog::new(
-     //       Some("Choose a file"), 
-     //       Some(&window),
-     //       gtk::FileChooserAction::SelectFolder);
-
-    //    folder_chooser.add_buttons(&[
-       //     ("Open", gtk::ResponseType::Ok),
-      //      ("Cancel", gtk::ResponseType::Cancel)
-     //   ]);
-
-     //   folder_chooser.set_select_multiple(true);
-//
-     //   folder_chooser.connect_response(clone!(@weak store => move|folder_chooser, response| {
-    //        if response == gtk::ResponseType::Ok {
-//
-       //         store.clear();
-
-          //      folder_chooser.select_all();
-
-        //        let folder = folder_chooser.get_filenames();
-
-             //let files = folder.enumerate_children_async();
-
-           //     for filename in folder{
-
-                    //store.insert_with_values(None, None, &[0], &[&"HELO"]);
-
-             //       match filename.to_str() {
-             //           None => panic!("new path is not a valid UTF-8 sequence"),
-            //            Some(name) => {  let chunks:Vec<&str> = name.split("/").collect();
-             //                           store.insert_with_values(None, None, &[0], &[&format!("{}",&chunks[chunks.len()-1])]);
-             //                           }
-            //        }
-           //     }
-
-           // }
-         //   folder_chooser.close();
-     //   }));
-      //  folder_chooser.show_all();
-   // }));
-
     let current_file4 = current_file.clone();
 
     let sourceview4 = sourceview.clone();
-
-    //let buffer2 = buffer.clone();
 
     save.connect_activate(clone!(@weak current_file4,@weak sourceview4 => move |_| {
 
@@ -339,6 +237,7 @@ fn build_ui(application: &gtk::Application) {
                 let text = buffer.get_text(&bounds.0,&bounds.1,true);
 
                 let path = Path::new(filename.to_str().unwrap());
+
                 let display = path.display();
 
                 let mut file = match File::create(&path) {
@@ -370,17 +269,9 @@ fn build_ui(application: &gtk::Application) {
     themes.connect_property_style_scheme_notify(clone!(@weak buffer, @weak themes => move |_| {
 
         let scheme = themes.get_style_scheme();
-
         buffer.set_style_scheme(Some(&scheme).unwrap().as_ref());
 
     }));
-
-
-
-    quit.connect_activate(clone!(@weak window => move |_| {
-        window.close();
-    }));
-
 
     about.connect_activate(move |_| {
 
@@ -388,16 +279,11 @@ fn build_ui(application: &gtk::Application) {
 
     });
 
-    // for i in 0..10 {
-    //insert_with_values takes two slices: column indices and ToValue
-    //trait objects. ToValue is implemented for strings, numeric types,
-    //bool and Object descendants
-    //   let iter = left_store.insert_with_values(None, None, &[0], &[&format!("Hello {}", i)]);
+    quit.connect_activate(clone!(@weak window => move |_| {
 
-    //   for _ in 0..i {
-    //     left_store.insert_with_values(Some(&iter), None, &[0], &[&"I'm a child node"]);
-    //   }
-    //}
+        window.close();
+
+    }));
 
     window.show_all();
 
