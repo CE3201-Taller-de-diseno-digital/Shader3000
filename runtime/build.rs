@@ -11,9 +11,25 @@ use std::{
 
 fn main() -> ExitCode {
     if std::env::var("CARGO_CFG_TARGET_ARCH").unwrap() == "xtensa" {
-        return ExitCode::SUCCESS;
+        xbuild_main()
+    } else {
+        hosted_main()
     }
+}
 
+fn xbuild_main() -> ExitCode {
+    const PATH: &str = "src/esp8266/atomic/atomic.c";
+
+    println!("cargo:rerun-if-changed={}", PATH);
+    cc::Build::new()
+        .compiler("xtensa-lx106-elf-gcc")
+        .file(PATH)
+        .compile("atomic_shim");
+
+    ExitCode::SUCCESS
+}
+
+fn hosted_main() -> ExitCode {
     let xtensa_root: PathBuf = if let Ok(xtensa_root) = env::var("RUST_XTENSA") {
         xtensa_root.into()
     } else {

@@ -29,9 +29,17 @@
 //! ejecución, pero no lo suficiente como para permitir el avance a las
 //! demás fases de la compilación.
 
-use crate::source::{InputStream, Located, Location, Position, SourceName};
-use std::{rc::Rc, str::FromStr};
+use crate::source::{InputStream, Located, Location};
+use std::{
+    fmt::{self, Display},
+    rc::Rc,
+    str::FromStr,
+};
+
 use thiserror::Error;
+
+// Case-insensitive
+pub use unicase::Ascii as NoCase;
 
 /// Límite de longitud de identificadores.
 const MAX_ID_LENGTH: usize = 10;
@@ -63,17 +71,23 @@ pub enum LexerError {
     /// Un identificador excede el límite de longitud.
     #[error("Identifier exceeds {MAX_ID_LENGTH} characters")]
     IdTooLong,
-
-    /// Se trató de comenzar un identificador con una letra mayúscula.
-    #[error("Identifiers must begin with a lowercase letter")]
-    UppercaseId,
 }
 
 /// Un identificador.
 ///
 /// Los identificadores cumplen ciertas reglas de contenido y longitud.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Identifier(Rc<String>);
+pub struct Identifier(Rc<NoCase<String>>);
+
+/// Un literal de cadana.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StrLiteral(Rc<NoCase<String>>);
+
+impl AsRef<NoCase<String>> for StrLiteral {
+    fn as_ref(&self) -> &NoCase<String> {
+        &self.0
+    }
+}
 
 /// Objeto resultante del análisis léxico.
 ///
@@ -88,7 +102,7 @@ pub enum Token {
     Keyword(Keyword),
 
     /// Literal de cadena.
-    StrLiteral(String),
+    StrLiteral(StrLiteral),
 
     /// Literal de entero.
     IntLiteral(i32),
@@ -98,6 +112,9 @@ pub enum Token {
 
     /// `,`
     Comma,
+
+    /// `.`
+    Period,
 
     /// `+`
     Plus,
@@ -163,6 +180,43 @@ pub enum Token {
     CloseCurly,
 }
 
+impl Display for Token {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Token::*;
+
+        match self {
+            Id(id) => write!(fmt, "identifier `{}`", id.0),
+            Keyword(keyword) => write!(fmt, "keyword `{}`", keyword),
+            StrLiteral(string) => write!(fmt, "literal \"{}\"", string.0),
+            IntLiteral(integer) => write!(fmt, "literal `{}`", integer),
+            Assign => fmt.write_str("`=`"),
+            Comma => fmt.write_str("`,`"),
+            Period => fmt.write_str("`.`"),
+            Plus => fmt.write_str("`+`"),
+            Minus => fmt.write_str("`-`"),
+            Times => fmt.write_str("`*`"),
+            Pow => fmt.write_str("`**`"),
+            Div => fmt.write_str("`/`"),
+            IntegerDiv => fmt.write_str("`//`"),
+            Mod => fmt.write_str("`%`"),
+            Colon => fmt.write_str("`:`"),
+            Semicolon => fmt.write_str("`;`"),
+            Equal => fmt.write_str("`==`"),
+            NotEqual => fmt.write_str("`<>`"),
+            Less => fmt.write_str("`<`"),
+            LessOrEqual => fmt.write_str("`<=`"),
+            Greater => fmt.write_str("`>`"),
+            GreaterOrEqual => fmt.write_str("`>=`"),
+            OpenParen => fmt.write_str("`(`"),
+            OpenSquare => fmt.write_str("`[`"),
+            OpenCurly => fmt.write_str("`{`"),
+            CloseParen => fmt.write_str("`)`"),
+            CloseSquare => fmt.write_str("]`"),
+            CloseCurly => fmt.write_str("`}`"),
+        }
+    }
+}
+
 /// Una palabra clave.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Keyword {
@@ -176,36 +230,71 @@ pub enum Keyword {
     For,
     In,
     Step,
-    Del,
+    Len,
+    Call,
     Procedure,
+    Blink,
+    Delay,
+    PrintLed,
+    PrintLedX,
+}
+
+impl Display for Keyword {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use Keyword::*;
+        let string = match self {
+            True => "true",
+            False => "false",
+            Type => "type",
+            List => "list",
+            Bool => "bool",
+            Int => "int",
+            If => "if",
+            For => "for",
+            In => "in",
+            Len => "len",
+            Step => "step",
+            Call => "call",
+            Procedure => "procedure",
+            Blink => "blink",
+            Delay => "delay",
+            PrintLed => "PrintLed",
+            PrintLedX => "PrintLedX",
+        };
+
+        fmt.write_str(string)
+    }
 }
 
 impl FromStr for Keyword {
     type Err = ();
 
     fn from_str(string: &str) -> Result<Self, Self::Err> {
-        // "CI" es "Case Insensitive"
-        use unicase::Ascii as CI;
         use Keyword::*;
 
-        const KEYWORDS: &'static [(CI<&'static str>, Keyword)] = &[
-            (CI::new("true"), True),
-            (CI::new("false"), False),
-            (CI::new("type"), Type),
-            (CI::new("list"), List),
-            (CI::new("bool"), Bool),
-            (CI::new("int"), Int),
-            (CI::new("if"), If),
-            (CI::new("for"), For),
-            (CI::new("in"), In),
-            (CI::new("step"), Step),
-            (CI::new("del"), Del),
-            (CI::new("procedure"), Procedure),
+        const KEYWORDS: &'static [(NoCase<&'static str>, Keyword)] = &[
+            (NoCase::new("true"), True),
+            (NoCase::new("false"), False),
+            (NoCase::new("type"), Type),
+            (NoCase::new("list"), List),
+            (NoCase::new("bool"), Bool),
+            (NoCase::new("int"), Int),
+            (NoCase::new("if"), If),
+            (NoCase::new("for"), For),
+            (NoCase::new("in"), In),
+            (NoCase::new("len"), Len),
+            (NoCase::new("step"), Step),
+            (NoCase::new("call"), Call),
+            (NoCase::new("procedure"), Procedure),
+            (NoCase::new("Blink"), Blink),
+            (NoCase::new("Delay"), Delay),
+            (NoCase::new("PrintLed"), PrintLed),
+            (NoCase::new("PrintLedX"), PrintLedX),
         ];
 
         KEYWORDS
             .iter()
-            .find(|&&(name, _)| name == CI::new(string))
+            .find(|&&(name, _)| name == NoCase::new(string))
             .map(|&(_, keyword)| keyword)
             .ok_or(())
     }
@@ -219,10 +308,9 @@ impl FromStr for Keyword {
 /// encontrado en el flujo de entrada.
 pub struct Lexer<S: Iterator> {
     source: std::iter::Peekable<S>,
-    from: SourceName,
     state: State,
-    start: Position,
-    next: Position,
+    start: Location,
+    next: Location,
 }
 
 /// Posibles estados del lexer.
@@ -287,14 +375,14 @@ enum State {
 }
 
 impl<S: InputStream> Lexer<S> {
-    /// Crea un lexer en estado inicial a partir de un flujo y su origen.
-    pub fn new(source: S, from: SourceName) -> Self {
+    /// Crea un lexer en estado inicial a partir de un flujo.
+    pub fn new(start: Location, source: S) -> Self {
+        let next = start.clone();
         Lexer {
-            from,
             source: source.peekable(),
             state: State::Start,
-            start: Default::default(),
-            next: Default::default(),
+            start,
+            next,
         }
     }
 
@@ -327,16 +415,24 @@ impl<S: InputStream> Lexer<S> {
     }
 
     /// Intenta construir un siguiente token.
-    fn lex(&mut self) -> Result<Option<Token>, LexerError> {
+    fn lex(&mut self) -> Result<Option<(Token, Location)>, LexerError> {
         use {State::*, Token::*};
 
+        let mut last_accepted = self.start.clone();
         let token = loop {
             // Se espera un siguiente carácter, fallando si hay error de E/S
             let next_char = match self.source.peek() {
                 None => None,
-                Some(Ok(c)) => Some(*c),
-                Some(Err(_)) => break Err(self.source.next().unwrap().unwrap_err().into()),
+                Some(Ok((c, _))) => Some(*c),
+                Some(Err(_)) => break Err(self.source.next().unwrap().err().unwrap().into()),
             };
+
+            // La posición de origen se mueve junto a la posición
+            // siguiente siempre que no se haya encontrado una
+            // frontera de token
+            if let Start = self.state {
+                self.start = self.next.clone();
+            }
 
             // Switch table principal, determina cambios de estado
             // y de salida del lexer a partir de combinaciones del
@@ -352,6 +448,7 @@ impl<S: InputStream> Lexer<S> {
                 // Tokens triviales
                 (Start, None) => return Ok(None),
                 (Start, Some(',')) => self.state = Complete(Comma),
+                (Start, Some('.')) => self.state = Complete(Period),
                 (Start, Some('+')) => self.state = Complete(Plus),
                 (Start, Some('-')) => self.state = Complete(Minus),
                 (Start, Some('%')) => self.state = Complete(Mod),
@@ -431,7 +528,8 @@ impl<S: InputStream> Lexer<S> {
 
                 // Fin de literales de cadena
                 (StringChars(string), Some('"')) => {
-                    self.state = Complete(StrLiteral(std::mem::take(string)))
+                    let literal = Rc::new(NoCase::new(std::mem::take(string)));
+                    self.state = Complete(Token::StrLiteral(self::StrLiteral(literal)));
                 }
 
                 // Casos entre comillas para literales de cadena
@@ -452,28 +550,20 @@ impl<S: InputStream> Lexer<S> {
                 (Word(word), _) => {
                     if let Ok(keyword) = self::Keyword::from_str(&word) {
                         break Ok(Keyword(keyword));
-                    } else if word.chars().nth(0).unwrap().is_ascii_uppercase() {
-                        self.start = self.next;
-                        break Err(LexerError::UppercaseId);
                     } else {
-                        break Ok(Id(Identifier(Rc::new(std::mem::take(word)))));
+                        break Ok(Id(Identifier(Rc::new(NoCase::new(std::mem::take(word))))));
                     }
                 }
             }
 
             // Si no hubo `continue`, aquí se consume el carácter que
             // se observó con lookahead anteriormente
-            self.source.next();
-
-            // Cambios en la posición del cursor
-            match next_char {
-                Some('\n') => self.next = self.next.newline(),
-                Some(_) => self.next = self.next.advance(),
-                None => (),
+            if let Some(Ok((_, next_position))) = self.source.next() {
+                last_accepted = std::mem::replace(&mut self.next, next_position);
             }
         };
 
-        token.map(Some)
+        token.map(|token| Some((token, last_accepted)))
     }
 }
 
@@ -483,24 +573,16 @@ impl<S: InputStream> Iterator for Lexer<S> {
     fn next(&mut self) -> Option<Self::Item> {
         match self.lex() {
             Ok(None) => None,
-            Ok(Some(token)) => {
-                let range = self.start..self.next;
-                let next = Located::at(token, Location::new(self.from.clone(), range));
-
-                self.start = self.next;
+            Ok(Some((token, last_accepted))) => {
                 self.state = State::Start;
 
-                Some(Ok(next))
+                let location = Location::span(self.start.clone(), &last_accepted);
+                Some(Ok(Located::at(token, location)))
             }
 
             Err(error) => {
                 self.state = State::Error;
-
-                let range = self.next..self.next.advance();
-                Some(Err(Located::at(
-                    error,
-                    Location::new(self.from.clone(), range),
-                )))
+                Some(Err(Located::at(error, self.next.clone())))
             }
         }
     }
