@@ -18,9 +18,9 @@ fn main() -> ExitCode {
 }
 
 fn xbuild_main() -> ExitCode {
-    const PATH: &str = "src/esp8266/atomic/atomic.c";
+    /*const PATH: &str = "src/esp8266/atomic/atomic.c";
 
-    /*println!("cargo:rerun-if-changed={}", PATH);
+    println!("cargo:rerun-if-changed={}", PATH);
     cc::Build::new()
         .compiler("xtensa-lx106-elf-gcc")
         .file(PATH)

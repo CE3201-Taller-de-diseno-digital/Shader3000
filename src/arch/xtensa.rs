@@ -49,13 +49,19 @@ impl fmt::Display for Reg {
 /// Implementación de emisión de código para Xtensa.
 pub struct Emitter<'a> {
     cx: Context<'a, Self>,
-    frame_offset: i32,
+}
+
+/// Información de estado para cada frame.
+#[derive(Default)]
+pub struct FrameInfo {
+    offset: i32,
 }
 
 impl<'a> super::Emitter<'a> for Emitter<'a> {
     const VALUE_SIZE: u32 = VALUE_SIZE;
 
     type Register = Reg;
+    type FrameInfo = FrameInfo;
 
     fn new(cx: Context<'a, Self>, instructions: &[Instruction]) -> io::Result<Self> {
         // Xtensa no tiene push/pop, por lo cual esto evita mucho trabajo sobre a1/sp
@@ -81,16 +87,20 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
             4 - total_locals % 4
         };
 
+        // La frontera de alineamiento es de 16 bytes (% 4)
+        let frame_offset = (total_locals + padding) as i32;
+        let cx = cx.with_frame_info(FrameInfo {
+            offset: frame_offset,
+        });
+
         let mut emitter = Emitter {
             cx,
-            frame_offset: 0,
         };
 
-        // La frontera de alineamiento es de 16 bytes (% 4)
-        emitter.move_sp(-((total_locals + padding) as i32))?;
+        emitter.move_sp(-frame_offset)?;
 
         // Se preserva la dirección de retorno
-        let a0_offset = VALUE_SIZE as i32 * (emitter.frame_offset - 1);
+        let a0_offset = VALUE_SIZE as i32 * (frame_offset - 1);
         emit!(emitter.cx, "s32i", "a0, a1, {}", a0_offset)?;
 
         // Se copian argumentos de registros a locales
@@ -106,9 +116,9 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
         &mut self.cx
     }
 
-    fn epilogue(mut self) -> io::Result<()> {
+    fn epilogue(self) -> io::Result<()> {
         // Revierte al estado justo antes de la llamada
-        self.move_sp(self.frame_offset)?;
+        self.move_sp(self.cx.frame_info().offset)?;
         emit!(self.cx, "l32i", "a0, a1, -4")?;
         emit!(self.cx, "ret.n")
     }
@@ -185,8 +195,7 @@ impl Emitter<'_> {
     }
 
     /// Corrige el registro de puntero de stack.
-    fn move_sp(&mut self, offset: i32) -> io::Result<()> {
-        self.frame_offset -= offset;
+    fn move_sp(&self, offset: i32) -> io::Result<()> {
         emit!(self.cx, "addi", "a1, a1, {}", offset * VALUE_SIZE as i32)
     }
 
@@ -201,7 +210,7 @@ impl Emitter<'_> {
             -2 - (Reg::MAX_ARGS + local - parameters) as i32
         };
 
-        let offset = (self.frame_offset + value_offset) * (VALUE_SIZE as i32);
+        let offset = (self.cx.frame_info().offset + value_offset) * (VALUE_SIZE as i32);
         format!("a1, {}", offset.abs())
     }
 }

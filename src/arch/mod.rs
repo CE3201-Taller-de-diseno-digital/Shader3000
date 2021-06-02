@@ -38,6 +38,9 @@ pub trait Emitter<'a>: Sized {
     /// TIpo de registro.
     type Register: Register;
 
+    /// Estado de cada marco de llamada.
+    type FrameInfo: Default;
+
     /// Construir a partir de un contexto de emisión y un listado de
     /// instrucciones en representación intermedia.
     ///

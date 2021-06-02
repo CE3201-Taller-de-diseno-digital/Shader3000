@@ -72,8 +72,9 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
     const VALUE_SIZE: u32 = VALUE_SIZE;
 
     type Register = Reg;
+    type FrameInfo = ();
 
-    fn new(mut cx: Context<'a, Self>, _: &[Instruction]) -> io::Result<Self> {
+    fn new(cx: Context<'a, Self>, _: &[Instruction]) -> io::Result<Self> {
         // Prólogo, se crea un stack frame
         emit!(cx, "push", "%rbp")?;
         emit!(cx, "mov", "%rsp, %rbp")?;
@@ -101,7 +102,7 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
         &mut self.cx
     }
 
-    fn epilogue(mut self) -> io::Result<()> {
+    fn epilogue(self) -> io::Result<()> {
         // Revierte al estado justo antes de la llamada
         emit!(self.cx, "mov", "%rbp, %rsp")?;
         emit!(self.cx, "pop", "%rbp")?;
