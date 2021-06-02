@@ -2,6 +2,7 @@ extern crate gio;
 extern crate glib;
 extern crate gtk;
 
+//use gdk::InputMode::Screen;
 use gio::prelude::*;
 use glib::clone;
 use gtk::prelude::*;
@@ -13,11 +14,27 @@ use std::io::BufReader;
 use std::path::Path;
 use std::rc::Rc;
 
+
+//use gtk::{gdk, gio};
+
 fn main() {
     let application = gtk::Application::new(Some("com.editor.animationLED"), Default::default())
         .expect("Initialization failed...");
 
     application.connect_activate(|app| {
+
+        //let provider = gtk::CssProvider::new();
+        // Load the CSS file
+        //let style = include_bytes!("style.css");
+       // provider.load_from_data(style).expect("Failed to load CSS");
+        // We give the CssProvided to the default screen so the CSS rules we added
+        // can be applied to our window.
+       // gtk::StyleContext::add_provider_for_screen(
+           // &gtk::Screen::default().expect("Error initializing gtk css provider."),
+            //&provider,
+           // gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        //);
+
         build_ui(app);
     });
 
@@ -45,8 +62,16 @@ fn build_ui(application: &gtk::Application) {
     let builder = gtk::Builder::from_string(glade_src);
     let window: gtk::ApplicationWindow = builder
         .get_object("main_window")
-        .expect("Couldn't get window1");
+        .expect("Couldn't get window");
     window.set_application(Some(application));
+
+    window.set_position(gtk::WindowPosition::Center);
+
+    let provider = gtk::CssProvider::new();
+    // Load the CSS file
+    provider.load_from_path("style.css").unwrap();
+    //let screen = gtk::Screen = window.get_screen().unwrap();
+    gtk::StyleContext::add_provider_for_screen(&window.get_screen().unwrap(),&provider,gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
 
     //               ___________________
     //______________/  Get components
@@ -96,9 +121,26 @@ fn build_ui(application: &gtk::Application) {
 
     let sourceview = sourceview::View::new_with_buffer(&buffer);
 
+    sourceview.set_auto_indent(true);
+
+    sourceview.set_indent_on_tab(true);
+
+    sourceview.set_show_line_numbers(true);
+
+    sourceview.set_smart_backspace(true);
+
     scroll.add(&sourceview);
 
     //print!("{:?}",sourceview::LanguageManager::get_default().unwrap().get_language_ids());
+
+    //Themes
+    let themes: sourceview::StyleSchemeChooserButton = builder.get_object("themes").unwrap();
+
+    //Terminal
+    let terminal: gtk::TextView = builder.get_object("terminal").unwrap();
+
+    terminal.set_widget_name("terminal");
+    //terminal.
 
     //Notebook
     let doc_name: gtk::Label = builder.get_object("doc_name").unwrap();
@@ -323,6 +365,18 @@ fn build_ui(application: &gtk::Application) {
 
         file_chooser.show_all();
     }));
+
+    themes.connect_property_style_scheme_notify(clone!(@weak buffer, @weak themes => move |_| {
+
+        let scheme = themes.get_style_scheme();
+
+        //window.in
+
+        buffer.set_style_scheme(Some(&scheme).unwrap().as_ref());
+
+    }));
+
+
 
     quit.connect_activate(clone!(@weak window => move |_| {
         window.close();
