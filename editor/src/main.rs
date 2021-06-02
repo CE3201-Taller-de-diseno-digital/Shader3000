@@ -69,7 +69,7 @@ fn build_ui(application: &gtk::Application) {
 
     let provider = gtk::CssProvider::new();
     // Load the CSS file
-    provider.load_from_path("style.css").unwrap();
+    provider.load_from_path("editor/src/resources/style.css").unwrap();
     //let screen = gtk::Screen = window.get_screen().unwrap();
     gtk::StyleContext::add_provider_for_screen(&window.get_screen().unwrap(),&provider,gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
 
@@ -84,20 +84,21 @@ fn build_ui(application: &gtk::Application) {
     //File
     let new: gtk::MenuItem = builder.get_object("new").unwrap();
     let open: gtk::MenuItem = builder.get_object("open").unwrap();
-    let open_folder: gtk::MenuItem = builder.get_object("open_folder").unwrap();
+    //let open_folder: gtk::MenuItem = builder.get_object("open_folder").unwrap();
     let save: gtk::MenuItem = builder.get_object("save").unwrap();
     let save_as: gtk::MenuItem = builder.get_object("save_as").unwrap();
     let quit: gtk::MenuItem = builder.get_object("quit").unwrap();
     //Edit
-    let cut: gtk::MenuItem = builder.get_object("cut").unwrap();
-    let copy: gtk::MenuItem = builder.get_object("copy").unwrap();
-    let paste: gtk::MenuItem = builder.get_object("paste").unwrap();
-    let delete: gtk::MenuItem = builder.get_object("delete").unwrap();
+    //let cut: gtk::MenuItem = builder.get_object("cut").unwrap();
+    //let copy: gtk::MenuItem = builder.get_object("copy").unwrap();
+    //let paste: gtk::MenuItem = builder.get_object("paste").unwrap();
+    //let delete: gtk::MenuItem = builder.get_object("delete").unwrap();
     //Theme
     //let bright :   gtk::MenuItem = builder.get_object("bright").unwrap();
     //let dark :     gtk::MenuItem = builder.get_object("dark").unwrap();
     //Help
     let about: gtk::MenuItem = builder.get_object("about").unwrap();
+    let about_win : gtk::AboutDialog = builder.get_object("about_win").unwrap();
 
     //Scrolled Window
 
@@ -139,20 +140,20 @@ fn build_ui(application: &gtk::Application) {
     //Terminal
     let terminal: gtk::TextView = builder.get_object("terminal").unwrap();
 
-    terminal.set_widget_name("terminal");
+    terminal.set_widget_name("hola");
     //terminal.
 
     //Notebook
     let doc_name: gtk::Label = builder.get_object("doc_name").unwrap();
 
     //TreeView
-    let left_tree: gtk::TreeView = builder.get_object("treeview").unwrap();
-    let store = gtk::TreeStore::new(&[String::static_type()]);
-    left_tree.set_model(Some(&store));
+    //let left_tree: gtk::TreeView = builder.get_object("treeview").unwrap();
+    //let store = gtk::TreeStore::new(&[String::static_type()]);
+    //left_tree.set_model(Some(&store));
     //Create treeview elements
-    left_tree.set_model(Some(&store));
-    left_tree.set_headers_visible(true);
-    append_text_column(&left_tree);
+    //left_tree.set_model(Some(&store));
+   // left_tree.set_headers_visible(true);
+   // append_text_column(&left_tree);
 
     //File
     //let mut current_file = "none";
@@ -230,50 +231,50 @@ fn build_ui(application: &gtk::Application) {
 
     //let store = Rc::new(store);
 
-    open_folder.connect_activate(clone!(@weak window => move |_| {
+    //open_folder.connect_activate(clone!(@weak window => move |_| {
 
         //let store = Rc::clone(&store);
 
-        let folder_chooser = gtk::FileChooserDialog::new(
-            Some("Choose a file"), 
-            Some(&window),
-            gtk::FileChooserAction::SelectFolder);
+     //   let folder_chooser = gtk::FileChooserDialog::new(
+     //       Some("Choose a file"), 
+     //       Some(&window),
+     //       gtk::FileChooserAction::SelectFolder);
 
-        folder_chooser.add_buttons(&[
-            ("Open", gtk::ResponseType::Ok),
-            ("Cancel", gtk::ResponseType::Cancel)
-        ]);
+    //    folder_chooser.add_buttons(&[
+       //     ("Open", gtk::ResponseType::Ok),
+      //      ("Cancel", gtk::ResponseType::Cancel)
+     //   ]);
 
-        folder_chooser.set_select_multiple(true);
+     //   folder_chooser.set_select_multiple(true);
+//
+     //   folder_chooser.connect_response(clone!(@weak store => move|folder_chooser, response| {
+    //        if response == gtk::ResponseType::Ok {
+//
+       //         store.clear();
 
-        folder_chooser.connect_response(clone!(@weak store => move|folder_chooser, response| {
-            if response == gtk::ResponseType::Ok {
+          //      folder_chooser.select_all();
 
-                store.clear();
+        //        let folder = folder_chooser.get_filenames();
 
-                folder_chooser.select_all();
+             //let files = folder.enumerate_children_async();
 
-                let folder = folder_chooser.get_filenames();
-
-                //let files = folder.enumerate_children_async();
-
-                for filename in folder{
+           //     for filename in folder{
 
                     //store.insert_with_values(None, None, &[0], &[&"HELO"]);
 
-                    match filename.to_str() {
-                        None => panic!("new path is not a valid UTF-8 sequence"),
-                        Some(name) => {  let chunks:Vec<&str> = name.split("/").collect();
-                                        store.insert_with_values(None, None, &[0], &[&format!("{}",&chunks[chunks.len()-1])]);
-                                        }
-                    }
-                }
+             //       match filename.to_str() {
+             //           None => panic!("new path is not a valid UTF-8 sequence"),
+            //            Some(name) => {  let chunks:Vec<&str> = name.split("/").collect();
+             //                           store.insert_with_values(None, None, &[0], &[&format!("{}",&chunks[chunks.len()-1])]);
+             //                           }
+            //        }
+           //     }
 
-            }
-            folder_chooser.close();
-        }));
-        folder_chooser.show_all();
-    }));
+           // }
+         //   folder_chooser.close();
+     //   }));
+      //  folder_chooser.show_all();
+   // }));
 
     let current_file4 = current_file.clone();
 
@@ -370,8 +371,6 @@ fn build_ui(application: &gtk::Application) {
 
         let scheme = themes.get_style_scheme();
 
-        //window.in
-
         buffer.set_style_scheme(Some(&scheme).unwrap().as_ref());
 
     }));
@@ -381,6 +380,13 @@ fn build_ui(application: &gtk::Application) {
     quit.connect_activate(clone!(@weak window => move |_| {
         window.close();
     }));
+
+
+    about.connect_activate(move |_| {
+
+        about_win.show_all();
+
+    });
 
     // for i in 0..10 {
     //insert_with_values takes two slices: column indices and ToValue
