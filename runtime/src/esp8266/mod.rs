@@ -17,6 +17,7 @@ use esp8266_hal::{
 };
 use xtensa_lx::mutex::{CriticalSectionMutex, Mutex, SpinLockMutex};
 
+extern crate compiler_builtins;
 mod atomic;
 
 pub fn digital_write<Pin>(pin: &mut Pin, value: usize)
