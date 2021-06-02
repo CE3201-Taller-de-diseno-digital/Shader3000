@@ -17,7 +17,6 @@ fn main() {
         .expect("Initialization failed...");
 
     application.connect_activate(|app| {
-
         build_ui(app);
     });
 
@@ -26,7 +25,6 @@ fn main() {
 }
 
 fn build_ui(application: &gtk::Application) {
-
     //               ____________________
     //______________/  Create main window
 
@@ -41,8 +39,14 @@ fn build_ui(application: &gtk::Application) {
 
     let provider = gtk::CssProvider::new();
     // Load the CSS file
-    provider.load_from_path("editor/src/resources/style.css").unwrap();
-    gtk::StyleContext::add_provider_for_screen(&window.get_screen().unwrap(),&provider,gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
+    provider
+        .load_from_path("editor/src/resources/style.css")
+        .unwrap();
+    gtk::StyleContext::add_provider_for_screen(
+        &window.get_screen().unwrap(),
+        &provider,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
 
     //               ___________________
     //______________/  Get components
@@ -60,7 +64,7 @@ fn build_ui(application: &gtk::Application) {
     let quit: gtk::MenuItem = builder.get_object("quit").unwrap();
     //Help
     let about: gtk::MenuItem = builder.get_object("about").unwrap();
-    let about_win : gtk::AboutDialog = builder.get_object("about_win").unwrap();
+    let about_win: gtk::AboutDialog = builder.get_object("about_win").unwrap();
 
     //Scrolled Window
     let scroll: gtk::ScrolledWindow = builder.get_object("sourceHold").unwrap();
@@ -95,23 +99,23 @@ fn build_ui(application: &gtk::Application) {
     //File
     let current_file = gtk::Label::new(Some("unnamed.txt"));
 
-
     //               ___________________
     //______________/  Add funtionality
 
-    compile_run.connect_clicked(clone!(@weak window, @weak save => move |_| {
+    compile_run.connect_clicked(clone!(@weak save => move |_| {
 
        save.activate();
 
     }));
 
-    compile.connect_clicked(clone!(@weak window , @weak save=> move |_| {
+    compile.connect_clicked(clone!(@weak save=> move |_| {
 
         save.activate();
 
     }));
 
-    new.connect_activate(clone!(@weak sourceview , @weak doc_name, @weak current_file, @weak save => move |_| {
+    new.connect_activate(
+        clone!(@weak sourceview , @weak doc_name, @weak current_file, @weak save => move |_| {
 
             save.activate();
 
@@ -274,9 +278,7 @@ fn build_ui(application: &gtk::Application) {
     }));
 
     about.connect_activate(move |_| {
-
         about_win.show_all();
-
     });
 
     quit.connect_activate(clone!(@weak window => move |_| {
