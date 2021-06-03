@@ -121,8 +121,12 @@ fn emit_body<'a, E: Emitter<'a>>(
     };
 
     let mut emitter = E::new(context, instructions)?;
+    let mut last_was_unconditional_jump = false;
+
     for instruction in instructions {
         use Instruction::*;
+
+        last_was_unconditional_jump = false;
 
         match instruction {
             SetLabel(Label(label)) => {
@@ -137,6 +141,8 @@ fn emit_body<'a, E: Emitter<'a>>(
 
                 emitter.spill()?;
                 emitter.jump_unconditional(&label)?;
+
+                last_was_unconditional_jump = true;
             }
 
             JumpIfFalse(local, label) => {
@@ -180,7 +186,11 @@ fn emit_body<'a, E: Emitter<'a>>(
         }
     }
 
-    emitter.epilogue()
+    if !last_was_unconditional_jump {
+        emitter.epilogue()?;
+    }
+
+    Ok(())
 }
 
 /// Genera el símbolo que corresponde a una etiqueta dentro de una función.

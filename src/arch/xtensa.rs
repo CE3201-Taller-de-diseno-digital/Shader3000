@@ -127,7 +127,8 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
     }
 
     fn jump_unconditional(&mut self, label: &str) -> io::Result<()> {
-        emit!(self.cx, "j.l", "{}, a2", label)
+        let reg = self.cx.scratch(&mut self.regs, &[])?;
+        emit!(self.cx, "j.l", "{}, {}", label, reg)
     }
 
     fn jump_if_false(&mut self, reg: Reg, label: &str) -> io::Result<()> {
@@ -176,6 +177,10 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
 
     fn local_to_reg(cx: &Context<'a, Self>, local: Local, reg: Reg) -> io::Result<()> {
         Self::load_or_store(cx, reg, local, "l32i")
+    }
+
+    fn reg_to_reg(cx: &Context<'a, Self>, source: Reg, target: Reg) -> io::Result<()> {
+        emit!(cx, "mov.n", "{}, {}", target, source)
     }
 }
 

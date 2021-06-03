@@ -97,6 +97,13 @@ pub trait Emitter<'a>: Sized {
     /// Copia los contenidos de una local a un registro.
     fn local_to_reg(cx: &Context<'a, Self>, local: Local, reg: Self::Register) -> io::Result<()>;
 
+    /// Copia los contenidos de un registro a otro.
+    fn reg_to_reg(
+        cx: &Context<'a, Self>,
+        source: Self::Register,
+        target: Self::Register,
+    ) -> io::Result<()>;
+
     /// Véase [Context::spill()].
     fn spill(&mut self) -> io::Result<()> {
         let (cx, regs) = self.cx_regs();

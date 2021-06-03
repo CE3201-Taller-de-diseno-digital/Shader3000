@@ -5,7 +5,10 @@ use crate::{
 };
 use std::io;
 
-pub struct Allocations<'a, E: Emitter<'a>>(Vec<Slot<E::Register>>);
+pub struct Allocations<'a, E: Emitter<'a>> {
+    slots: Vec<Slot<E::Register>>,
+    next_id: usize,
+}
 
 struct Slot<R: Register> {
     reg: R,
@@ -15,11 +18,12 @@ struct Slot<R: Register> {
 struct Entry {
     local: Local,
     dirty: bool,
+    sequence: usize,
 }
 
 impl<'a, E: Emitter<'a>> Context<'a, E> {
     pub fn spill(&self, regs: &mut Allocations<'a, E>) -> io::Result<()> {
-        for slot in regs.0.iter_mut() {
+        for slot in regs.slots.iter_mut() {
             let reg = slot.reg;
 
             if let Some(entry) = &mut slot.entry {
@@ -35,7 +39,7 @@ impl<'a, E: Emitter<'a>> Context<'a, E> {
 
     pub fn clear(&self, regs: &mut Allocations<'a, E>) -> io::Result<()> {
         self.spill(regs)?;
-        for slot in regs.0.iter_mut() {
+        for slot in regs.slots.iter_mut() {
             slot.entry = None;
         }
 
@@ -43,16 +47,14 @@ impl<'a, E: Emitter<'a>> Context<'a, E> {
     }
 
     pub fn read(&self, regs: &mut Allocations<'a, E>, local: Local) -> io::Result<E::Register> {
-        for slot in regs.0.iter() {
-            match &slot.entry {
-                Some(entry) if entry.local == local => return Ok(slot.reg),
-                _ => (),
-            }
+        if let Some((reg, _)) = regs.find_local(local) {
+            return Ok(reg);
         }
 
         let entry = Some(Entry {
             local,
             dirty: false,
+            sequence: regs.next_sequence(),
         });
 
         let slot = self.take_slot(regs, &[], entry)?;
@@ -62,20 +64,16 @@ impl<'a, E: Emitter<'a>> Context<'a, E> {
     }
 
     pub fn write(&self, regs: &mut Allocations<'a, E>, local: Local) -> io::Result<E::Register> {
-        for slot in regs.0.iter_mut() {
-            let reg = slot.reg;
-
-            match &mut slot.entry {
-                Some(entry) if entry.local == local => {
-                    entry.dirty = true;
-                    return Ok(reg);
-                }
-
-                _ => (),
-            }
+        if let Some((reg, entry)) = regs.find_local(local) {
+            entry.as_mut().unwrap().dirty = true;
+            return Ok(reg);
         }
 
-        let entry = Some(Entry { local, dirty: true });
+        let entry = Some(Entry {
+            local,
+            dirty: true,
+            sequence: regs.next_sequence(),
+        });
 
         self.take_slot(regs, &[], entry).map(|slot| slot.reg)
     }
@@ -94,8 +92,18 @@ impl<'a, E: Emitter<'a>> Context<'a, E> {
         reg: E::Register,
         local: Local,
     ) -> io::Result<()> {
+        let move_from = match regs.find_local(local) {
+            Some((old_reg, old_entry)) if old_reg != reg => {
+                *old_entry = None;
+                Some(old_reg)
+            }
+
+            _ => None,
+        };
+
+        let sequence = regs.next_sequence();
         let slot = regs
-            .0
+            .slots
             .iter_mut()
             .find(|slot| slot.reg == reg)
             .expect("register not in file");
@@ -104,9 +112,11 @@ impl<'a, E: Emitter<'a>> Context<'a, E> {
             Some(entry) if entry.local == local => false,
             Some(entry) => {
                 E::reg_to_local(self, reg, entry.local)?;
+
                 *entry = Entry {
                     local,
                     dirty: false,
+                    sequence,
                 };
 
                 true
@@ -115,15 +125,15 @@ impl<'a, E: Emitter<'a>> Context<'a, E> {
             None => true,
         };
 
-        if overwrite {
-            E::local_to_reg(self, local, reg)?;
+        match (overwrite, move_from) {
+            (true, Some(old_reg)) => E::reg_to_reg(self, old_reg, reg),
+            (true, None) => E::local_to_reg(self, local, reg),
+            _ => Ok(()),
         }
-
-        Ok(())
     }
 
     pub fn assert_dirty(&self, regs: &mut Allocations<'a, E>, reg: E::Register, local: Local) {
-        regs.0
+        regs.slots
             .iter()
             .filter_map(|slot| match &slot.entry {
                 Some(entry) if entry.local == local => Some(local),
@@ -133,14 +143,19 @@ impl<'a, E: Emitter<'a>> Context<'a, E> {
             .ok_or(())
             .expect_err("assert_dirty() on loaded local");
 
+        let sequence = regs.next_sequence();
         let slot = regs
-            .0
+            .slots
             .iter_mut()
             .find(|slot| slot.reg == reg)
             .expect("bad register");
-        assert!(slot.entry.is_none(), "assert_dirty() on occupied register");
 
-        slot.entry = Some(Entry { local, dirty: true });
+        assert!(slot.entry.is_none(), "assert_dirty() on occupied register");
+        slot.entry = Some(Entry {
+            local,
+            dirty: true,
+            sequence,
+        });
     }
 
     fn take_slot<'b>(
@@ -167,19 +182,23 @@ impl<'a, E: Emitter<'a>> Context<'a, E> {
         // limitaciones actuales de rustc/borrowck
 
         if regs
-            .0
+            .slots
             .iter_mut()
             .find(|slot| slot.entry.is_none())
             .is_some()
         {
-            Ok(regs.0.iter_mut().find(|slot| slot.entry.is_none()).unwrap())
+            Ok(regs
+                .slots
+                .iter_mut()
+                .find(|slot| slot.entry.is_none())
+                .unwrap())
         } else {
             // Todos los registros están ocupados, se hace spill de alguno
             let slot = regs
-                .0
+                .slots
                 .iter_mut()
                 .filter(|slot| locked.iter().find(|locked| **locked == slot.reg).is_none())
-                .next()
+                .min_by_key(|slot| slot.entry.as_ref().unwrap().sequence)
                 .expect("register file exhaustion");
 
             E::reg_to_local(self, slot.reg, slot.entry.as_ref().unwrap().local)?;
@@ -188,14 +207,36 @@ impl<'a, E: Emitter<'a>> Context<'a, E> {
     }
 }
 
+impl<'a, E: Emitter<'a>> Allocations<'a, E> {
+    fn find_local(&mut self, local: Local) -> Option<(E::Register, &mut Option<Entry>)> {
+        for slot in self.slots.iter_mut() {
+            let reg = slot.reg;
+
+            match &mut slot.entry {
+                Some(entry) if entry.local == local => return Some((reg, &mut slot.entry)),
+                _ => continue,
+            }
+        }
+
+        None
+    }
+
+    fn next_sequence(&mut self) -> usize {
+        let next = self.next_id;
+        self.next_id += 1;
+
+        next
+    }
+}
+
 impl<'a, E: Emitter<'a>> Default for Allocations<'a, E> {
     fn default() -> Self {
-        let allocations = E::Register::FILE
+        let slots = E::Register::FILE
             .iter()
             .copied()
             .map(|reg| Slot { reg, entry: None })
             .collect::<Vec<_>>();
 
-        Allocations(allocations)
+        Allocations { slots, next_id: 0 }
     }
 }

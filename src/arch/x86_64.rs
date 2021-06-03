@@ -163,7 +163,13 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
     }
 
     fn load_const(&mut self, value: i32, reg: Reg) -> io::Result<()> {
-        emit!(self.cx, "mov", "${}, %{}", value, reg)
+        if value == 0 {
+            emit!(self.cx, "xor", "%{0}, %{0}", reg.as_dword())
+        } else if value > 0 {
+            emit!(self.cx, "mov", "${}, %{}", value, reg.as_dword())
+        } else {
+            emit!(self.cx, "mov", "${}, %{}", value, reg)
+        }
     }
 
     fn load_global(&mut self, Global(global): &Global, reg: Reg) -> io::Result<()> {
@@ -222,6 +228,10 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
     fn local_to_reg(cx: &Context<'a, Self>, local: Local, reg: Reg) -> io::Result<()> {
         let address = Self::local_address(cx, local);
         emit!(cx, "mov", "{}, %{}", address, reg)
+    }
+
+    fn reg_to_reg(cx: &Context<'a, Self>, source: Reg, target: Reg) -> io::Result<()> {
+        emit!(cx, "mov", "%{}, %{}", source, target)
     }
 }
 
