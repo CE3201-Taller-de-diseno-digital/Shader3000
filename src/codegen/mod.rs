@@ -5,7 +5,7 @@
 //! objetivo en particular. Este módulo :
 
 use crate::{
-    arch::{Arch, Emitter},
+    arch::{Arch, Emitter, Register},
     ir::{Function, FunctionBody, Global, Instruction, Label, Local, Program},
 };
 
@@ -15,6 +15,8 @@ use std::{
     io::{self, Write},
     ops::Deref,
 };
+
+pub mod regs;
 
 /// Emite código ensamblador para un programa IR.
 ///
@@ -124,29 +126,56 @@ fn emit_body<'a, E: Emitter<'a>>(
 
         match instruction {
             SetLabel(Label(label)) => {
-                writeln!(emitter.cx(), "\t.L{}.{}:", function.name, label)?;
+                emitter.clear()?;
+
+                let (cx, _) = emitter.cx_regs();
+                writeln!(cx, "\t.L{}.{}:", function.name, label)?;
             }
 
             Jump(label) => {
                 let label = label_symbol(function, *label);
+
+                emitter.spill()?;
                 emitter.jump_unconditional(&label)?;
             }
 
             JumpIfFalse(local, label) => {
                 let label = label_symbol(function, *label);
-                emitter.jump_if_false(*local, &label)?;
+                let reg = emitter.read(*local)?;
+
+                emitter.spill()?;
+                emitter.jump_if_false(reg, &label)?;
             }
 
-            LoadConst(value, local) => emitter.load_const(*value, *local)?,
-            LoadGlobal(global, local) => emitter.load_global(global, *local)?,
-            StoreGlobal(local, global) => emitter.store_global(*local, global)?,
+            LoadConst(value, local) => {
+                let reg = emitter.write(*local)?;
+                emitter.load_const(*value, reg)?;
+            }
+
+            LoadGlobal(global, local) => {
+                let reg = emitter.write(*local)?;
+                emitter.load_global(global, reg)?;
+            }
+
+            StoreGlobal(local, global) => {
+                let reg = emitter.read(*local)?;
+                emitter.store_global(reg, global)?;
+            }
 
             Call {
                 target,
                 arguments,
                 output,
             } => {
-                emitter.call(&target, &arguments, *output)?;
+                emitter.spill()?;
+                let call_info = emitter.prepare_args(&arguments)?;
+
+                emitter.clear()?;
+                emitter.call(&target, call_info)?;
+
+                if let Some(output) = output {
+                    emitter.assert_dirty(E::Register::RETURN, *output);
+                }
             }
         }
     }

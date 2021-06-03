@@ -55,7 +55,7 @@ pub enum FunctionBody {
 pub struct Label(pub u32);
 
 /// Las locales se identifican por índices secuenciales.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Local(pub u32);
 
 /// Una variable global se identifica únicamente por su símbolo.
