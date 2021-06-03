@@ -37,6 +37,7 @@ fn build_ui(application: &gtk::Application) {
 
     window.set_position(gtk::WindowPosition::Center);
 
+
     let provider = gtk::CssProvider::new();
     // Load the CSS file
     provider
@@ -73,7 +74,7 @@ fn build_ui(application: &gtk::Application) {
     let buffer = sourceview::Buffer::new_with_language(
         &sourceview::LanguageManager::get_default()
             .unwrap()
-            .get_language("c")
+            .get_language("led")
             .unwrap(),
     );
     buffer.set_highlight_syntax(true);
