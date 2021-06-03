@@ -18,9 +18,9 @@ fn main() -> ExitCode {
 }
 
 fn xbuild_main() -> ExitCode {
-    const PATH: &str = "src/esp8266/atomic/atomic.c";
+    /*const PATH: &str = "src/esp8266/atomic/atomic.c";
 
-    /*println!("cargo:rerun-if-changed={}", PATH);
+    println!("cargo:rerun-if-changed={}", PATH);
     cc::Build::new()
         .compiler("xtensa-lx106-elf-gcc")
         .file(PATH)
@@ -90,6 +90,10 @@ fn hosted_main() -> ExitCode {
     env::set_var("XARGO_RUST_SRC", xtensa_root.join("library"));
     env::set_var("RUSTC", bin_path.join("rustc"));
     env::set_var("RUSTDOC", bin_path.join("rustdoc"));
+    env::set_var(
+        "RUST_COMPILER_RT_ROOT",
+        xtensa_root.join("src/llvm-project/compiler-rt"),
+    );
 
     restore_tty_output();
 

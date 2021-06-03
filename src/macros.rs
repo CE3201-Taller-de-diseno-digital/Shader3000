@@ -55,11 +55,11 @@ macro_rules! dispatch_arch {
 /// ```
 macro_rules! emit {
     ($context:expr, $opcode:expr) => {
-        writeln!($context.output(), "\t{}", $opcode)
+        writeln!($context, "\t{}", $opcode)
     };
 
     ($context:expr, $opcode:expr, $($format:tt)*) => {{
-        write!($context.output(), "\t{:8}", $opcode)?;
-        writeln!($context.output(), $($format)*)
+        write!($context, "\t{:8}", $opcode)?;
+        writeln!($context, $($format)*)
     }};
 }

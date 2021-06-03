@@ -70,23 +70,43 @@ url{https://wiki.gnome.org/Projects/GtkSourceView}
 
 ### 24 de mayo
 
+- Se implementa funcionalidad de boton cerrar y abrir
+
 ### 25 de mayo
+
+- Se realizan pruebas de implementacion para el treeview
 
 ### 26 de mayo
 
+- Se investiga como implemetar open folder y save
+
 ### 27 de mayo
+
+- Se continua investigando la implementacion de save, new y open folder
 
 ### 28 de mayo
 
+- Se investiga como solucionar save y save as. Ademas se realiza una reunion para evaluar los avences logrados hasta el momento, y hacer el procedimiento necesario para correr el codigo de los compañeros.
+
 ### 29 de mayo
+
+- Se continua investigando la implementacion de save, new y open folder. Y la implementacion de syntax highlight para el sourceview.
 
 ### 30 de mayo
 
+- Se logra implemetar las funcionalidades de save y save as y se consigue implementar syntax highlight para C
+
 ### 31 de mayo
+
+- Se continua investigando la funcionalidad de sourceview. Y el uso de CSS para gtk en rust.
 
 ### 1 de junio
 
+- Se implementan los cambios de estilo para el sourceview, un CSS para la apariencia general del programa. Se detiene el avance para la implementacion de del treeview y se asigana una funcion de guardado automatico para el editor. 
+
 ### 2 de junio
+
+- Comienza a testear se el lexer.
 
 ### 3 de junio
 

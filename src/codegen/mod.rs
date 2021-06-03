@@ -5,14 +5,18 @@
 //! objetivo en particular. Este módulo :
 
 use crate::{
-    arch::{Arch, Emitter},
+    arch::{Arch, Emitter, Register},
     ir::{Function, FunctionBody, Global, Instruction, Label, Local, Program},
 };
 
 use std::{
+    cell::RefCell,
+    fmt,
     io::{self, Write},
     ops::Deref,
 };
+
+pub mod regs;
 
 /// Emite código ensamblador para un programa IR.
 ///
@@ -52,9 +56,9 @@ pub fn emit(program: &Program, arch: Arch, output: &mut dyn Write) -> io::Result
 /// y la función IR que está siendo generada.
 pub struct Context<'a, E: Emitter<'a>> {
     function: &'a Function,
-    output: &'a mut dyn Write,
+    output: RefCell<&'a mut dyn Write>,
     locals: u32,
-    _todo: std::marker::PhantomData<[E; 0]>,
+    frame_info: E::FrameInfo,
 }
 
 impl<'a, E: Emitter<'a>> Context<'a, E> {
@@ -63,9 +67,9 @@ impl<'a, E: Emitter<'a>> Context<'a, E> {
         self.function
     }
 
-    /// Flujo de salida.
-    pub fn output(&mut self) -> &mut dyn Write {
-        self.output
+    /// Escribe al flujo de salida.
+    pub fn write_fmt(&self, fmt: fmt::Arguments<'_>) -> io::Result<()> {
+        self.output.borrow_mut().write_fmt(fmt)
     }
 
     /// Cantidad máxima de locales que la función accede,
@@ -76,6 +80,17 @@ impl<'a, E: Emitter<'a>> Context<'a, E> {
     /// adicionales por razones que dependen de la arquitectura.
     pub fn agnostic_locals(&self) -> u32 {
         self.locals
+    }
+
+    /// Obtiene la información de marco de llamada actual.
+    /// Sus contenidos y significado dependen de la arquitectura.
+    pub fn frame_info(&self) -> &E::FrameInfo {
+        &self.frame_info
+    }
+
+    /// Sustituye la información de marco actual para este contexto.
+    pub fn with_frame_info(self, frame_info: E::FrameInfo) -> Self {
+        Context { frame_info, ..self }
     }
 }
 
@@ -100,45 +115,82 @@ fn emit_body<'a, E: Emitter<'a>>(
 
     let context = Context {
         function,
-        output,
+        output: RefCell::new(output),
         locals,
-        _todo: Default::default(),
+        frame_info: Default::default(),
     };
 
     let mut emitter = E::new(context, instructions)?;
+    let mut last_was_unconditional_jump = false;
+
     for instruction in instructions {
         use Instruction::*;
 
+        last_was_unconditional_jump = false;
+
         match instruction {
             SetLabel(Label(label)) => {
-                writeln!(emitter.cx().output, "\t.L{}.{}:", function.name, label)?;
+                emitter.clear()?;
+
+                let (cx, _) = emitter.cx_regs();
+                writeln!(cx, "\t.L{}.{}:", function.name, label)?;
             }
 
             Jump(label) => {
                 let label = label_symbol(function, *label);
+
+                emitter.spill()?;
                 emitter.jump_unconditional(&label)?;
+
+                last_was_unconditional_jump = true;
             }
 
             JumpIfFalse(local, label) => {
                 let label = label_symbol(function, *label);
-                emitter.jump_if_false(*local, &label)?;
+                let reg = emitter.read(*local)?;
+
+                emitter.spill()?;
+                emitter.jump_if_false(reg, &label)?;
             }
 
-            LoadConst(value, local) => emitter.load_const(*value, *local)?,
-            LoadGlobal(global, local) => emitter.load_global(global, *local)?,
-            StoreGlobal(local, global) => emitter.store_global(*local, global)?,
+            LoadConst(value, local) => {
+                let reg = emitter.write(*local)?;
+                emitter.load_const(*value, reg)?;
+            }
+
+            LoadGlobal(global, local) => {
+                let reg = emitter.write(*local)?;
+                emitter.load_global(global, reg)?;
+            }
+
+            StoreGlobal(local, global) => {
+                let reg = emitter.read(*local)?;
+                emitter.store_global(reg, global)?;
+            }
 
             Call {
                 target,
                 arguments,
                 output,
             } => {
-                emitter.call(&target, &arguments, *output)?;
+                emitter.spill()?;
+                let call_info = emitter.prepare_args(&arguments)?;
+
+                emitter.clear()?;
+                emitter.call(&target, call_info)?;
+
+                if let Some(output) = output {
+                    emitter.assert_dirty(E::Register::RETURN, *output);
+                }
             }
         }
     }
 
-    emitter.epilogue()
+    if !last_was_unconditional_jump {
+        emitter.epilogue()?;
+    }
+
+    Ok(())
 }
 
 /// Genera el símbolo que corresponde a una etiqueta dentro de una función.

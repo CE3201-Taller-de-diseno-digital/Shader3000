@@ -7,7 +7,7 @@
 //! implementaciones.
 
 use crate::{
-    codegen::Context,
+    codegen::{regs::Allocations, Context},
     ir::{Function, Global, Instruction, Local},
 };
 
@@ -38,6 +38,12 @@ pub trait Emitter<'a>: Sized {
     /// TIpo de registro.
     type Register: Register;
 
+    /// Estado que se preserva durante las subfases de llamada.
+    type CallInfo;
+
+    /// Estado de cada marco de llamada.
+    type FrameInfo: Default;
+
     /// Construir a partir de un contexto de emisión y un listado de
     /// instrucciones en representación intermedia.
     ///
@@ -48,39 +54,92 @@ pub trait Emitter<'a>: Sized {
     /// Emite el epílogo de la función, terminando su listado de código.
     fn epilogue(self) -> io::Result<()>;
 
-    /// Obtiene el contexto de emisión.
+    /// Obtiene el contexto de emisión y el estado de reservación
+    /// de registros.
     ///
     /// Implicado aquí que todo `Emitter` debe guardar as-is el [`Context`]
     /// que se le otorga en [`Emitter::new()`].
-    fn cx(&mut self) -> &mut Context<'a, Self>;
+    fn cx_regs(&mut self) -> (&mut Context<'a, Self>, &mut Allocations<'a, Self>);
 
     /// Saltar incondicionalmente a una etiqueta.
     fn jump_unconditional(&mut self, label: &str) -> io::Result<()>;
 
-    /// Saltar a una etiqueta si una local tiene valor cero.
-    fn jump_if_false(&mut self, local: Local, label: &str) -> io::Result<()>;
+    /// Saltar a una etiqueta si un registro contiene cero.
+    fn jump_if_false(&mut self, reg: Self::Register, label: &str) -> io::Result<()>;
 
-    /// Copiar una constante a una local.
-    fn load_const(&mut self, value: i32, local: Local) -> io::Result<()>;
+    /// Copiar una constante a un registro.
+    fn load_const(&mut self, value: i32, reg: Self::Register) -> io::Result<()>;
 
-    /// Copiar los contenidos de una variable global a una local.
-    fn load_global(&mut self, global: &Global, local: Local) -> io::Result<()>;
+    /// Copiar los contenidos de una variable global a un registro.
+    fn load_global(&mut self, global: &Global, reg: Self::Register) -> io::Result<()>;
 
-    /// Copiar los contenidos de una local a una vriable global.
-    fn store_global(&mut self, local: Local, global: &Global) -> io::Result<()>;
+    /// Copiar los contenidos de un registro a una vriable global.
+    fn store_global(&mut self, reg: Self::Register, global: &Global) -> io::Result<()>;
+
+    /// Copia los argumentos de una llamada a sus posiciones
+    /// definidas por la convención de llamada.
+    ///
+    /// El estado retornado por esta función le permite a [`Emitter::call()`]
+    /// llevar cuenta de información que se calculó durante la colocaeción
+    /// de argumentos, generalmente con el propósito de limpiar argumentos
+    /// colocados.
+    fn prepare_args(&mut self, arguments: &[Local]) -> io::Result<Self::CallInfo>;
 
     /// Invocar a una función.
     ///
-    /// El `Emitter` debe disponer los argumentos en los registros
-    /// o ubicaciones correctas, llamar propiamente a la función,
-    /// y opcionalmente asociar su valor de retorno con una local.
-    fn call(
-        &mut self,
-        target: &Function,
-        arguments: &[Local],
-        output: Option<Local>,
+    /// Se asume para este punto que se han colocado los argumentos
+    /// en los lugares correctos y que no quedan registros dirty.
+    fn call(&mut self, target: &Function, call_info: Self::CallInfo) -> io::Result<()>;
+
+    /// Copia los contenidos de un registro a una local.
+    fn reg_to_local(cx: &Context<'a, Self>, reg: Self::Register, local: Local) -> io::Result<()>;
+
+    /// Copia los contenidos de una local a un registro.
+    fn local_to_reg(cx: &Context<'a, Self>, local: Local, reg: Self::Register) -> io::Result<()>;
+
+    /// Copia los contenidos de un registro a otro.
+    fn reg_to_reg(
+        cx: &Context<'a, Self>,
+        source: Self::Register,
+        target: Self::Register,
     ) -> io::Result<()>;
+
+    /// Véase [Context::spill()].
+    fn spill(&mut self) -> io::Result<()> {
+        let (cx, regs) = self.cx_regs();
+        cx.spill(regs)
+    }
+
+    /// Véase [Context::clear()].
+    fn clear(&mut self) -> io::Result<()> {
+        let (cx, regs) = self.cx_regs();
+        cx.clear(regs)
+    }
+
+    /// Véase [Context::write()].
+    fn read(&mut self, local: Local) -> io::Result<Self::Register> {
+        let (cx, regs) = self.cx_regs();
+        cx.read(regs, local)
+    }
+
+    /// Véase [Context::write()].
+    fn write(&mut self, local: Local) -> io::Result<Self::Register> {
+        let (cx, regs) = self.cx_regs();
+        cx.write(regs, local)
+    }
+
+    /// Véase [Context::assert_dirty()]
+    fn assert_dirty(&mut self, reg: Self::Register, local: Local) {
+        let (cx, regs) = self.cx_regs();
+        cx.assert_dirty(regs, reg, local);
+    }
 }
 
 /// Registro de procesador.
-pub trait Register: Copy {}
+pub trait Register: 'static + Copy + PartialEq + Eq {
+    /// Registro en el que se encuentran valores de retorno.
+    const RETURN: Self;
+
+    /// Registros disponsibles para reservación.
+    const FILE: &'static [Self];
+}
