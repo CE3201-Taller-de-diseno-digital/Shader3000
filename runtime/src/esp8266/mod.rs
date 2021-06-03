@@ -11,12 +11,11 @@ use esp8266_hal::{
     ehal::digital::v2::OutputPin,
     gpio::{self, Output, PushPull},
     interrupt::*,
-    target::Peripherals,
+    target::{Peripherals, DPORT, TIMER},
     timer::{Timer1, Timer2, TimerExt},
     uart::{UART0Ext, UART0Serial},
 };
 use xtensa_lx::mutex::{CriticalSectionMutex, Mutex, SpinLockMutex};
-
 mod atomic;
 
 pub fn digital_write<Pin>(pin: &mut Pin, value: usize)
@@ -29,36 +28,24 @@ where
         pin.set_low().unwrap();
     }
 }
+
 /// Detieen el programa por una cantidad de milisegundos.
 pub fn delay_ms(mut millis: u32) {
-    while millis > 0 {
-        let delay = millis.min(1000);
-        (&HW).lock(|hw| {
-            let hw = hw.as_mut().unwrap();
-            hw.timer2.delay_ms(delay);
-        });
-        millis -= delay;
+    (&HW).lock(|hw| hw.as_mut().unwrap().timeout = millis);
+    let mut finished = false;
+    while (!finished) {
+        (&HW).lock(|hw| finished = hw.as_mut().unwrap().delay_finished());
     }
 }
-/// Detieen el programa por una cantidad de microsegundos.
-pub fn delay_us(mut micros: u32) {
-    while micros > 0 {
-        let delay = micros.min(1000);
-        (&HW).lock(|hw| {
-            let hw = hw.as_mut().unwrap();
-            hw.timer2.delay_us(delay);
-        });
-        micros -= delay;
-    }
-}
+
 /// Muestra información de depuración de alguna manera.
 pub fn debug(hint: usize) {
     //TODO: Esto no se puede quedar así
     (&HW).lock(|hw| {
         let hw = hw.as_mut().unwrap();
-        digital_write(&mut hw.d1, hint & 0b01);
+        //digital_write(&mut hw.d1, hint & 0b01);
         //digital_write(&mut hw.d4, hint & 0b10);
-        //digital_write(&mut hw.d7, hint & 0b10)
+        digital_write(&mut hw.d7, hint & 0b10)
     });
 }
 
@@ -68,8 +55,8 @@ struct Hw {
     d4: gpio::Gpio2<Output<PushPull>>,
     d7: gpio::Gpio13<Output<PushPull>>,
     d8: gpio::Gpio15<Output<PushPull>>,
-    timer1: Timer1,
-    timer2: Timer2,
+    //timer1: Timer1,
+    //timer2: Timer2,
     selector_data: usize,
     col_datapin: gpio::Gpio4<Output<PushPull>>,   //d2
     col_clockpin: gpio::Gpio0<Output<PushPull>>,  //d3
@@ -77,7 +64,8 @@ struct Hw {
     row_clockpin: gpio::Gpio12<Output<PushPull>>, //d6
     states: [usize; 8],
     current_state: usize,
-    serial: UART0Serial,
+    ticks: u32,
+    timeout: u32,
 }
 enum ShiftRegister {
     Row,
@@ -112,7 +100,7 @@ impl Hw {
         &mut self.next_row();
     }
     pub fn next_row(&mut self) {
-        if (self.current_state < 7) {
+        if self.current_state < 2 {
             self.current_state += 1;
         } else {
             self.current_state = 0;
@@ -122,11 +110,32 @@ impl Hw {
         &mut self.shift(self.states[self.current_state], ShiftRegister::Column);
         &mut self.next_row();
     }
+    pub fn tick(&mut self) {
+        self.ticks = self.ticks + 1;
+        if (self.timeout > 0) {
+            self.timeout -= 1
+        }
+    }
+    pub fn reset_ticks(&mut self) {
+        self.ticks = 0;
+    }
+    pub fn compare_ticks(&mut self, n: u32) -> bool {
+        self.ticks > n
+    }
+    pub fn get_ticks(&mut self) -> u32 {
+        self.ticks
+    }
+    pub fn start_delay(&mut self, time: u32) {
+        self.timeout = time;
+    }
+    pub fn delay_finished(&mut self) -> bool {
+        self.timeout == 0
+    }
 }
 /// Instancia global de periféricos, ya que no tenemos atómicos.
-//static mut HW: Option<Hw> = None;
-static HW: SpinLockMutex<Option<Hw>> = SpinLockMutex::new(None);
-static MILLIS: CriticalSectionMutex<Option<u32>> = CriticalSectionMutex::new(None);
+static HW: CriticalSectionMutex<Option<Hw>> = CriticalSectionMutex::new(None);
+static SERIAL: CriticalSectionMutex<Option<UART0Serial>> = CriticalSectionMutex::new(None);
+
 /// Punto de entrada para ESP8266.
 #[entry]
 fn main() -> ! {
@@ -134,39 +143,61 @@ fn main() -> ! {
     // Se descomponen estructuras de periféricos para formar self::HW
     let peripherals = Peripherals::take().unwrap();
     let gpio = peripherals.GPIO.split();
-    let (timer1, timer2) = peripherals.TIMER.timers();
-    let serial = peripherals
+    let mut serial = peripherals
         .UART0
         .serial(gpio.gpio1.into_uart(), gpio.gpio3.into_uart());
+    (&SERIAL).lock(|x| *x = Some(serial));
     let mut hw = Hw {
         d1: gpio.gpio5.into_push_pull_output(),
         d4: gpio.gpio2.into_push_pull_output(),
         d7: gpio.gpio13.into_push_pull_output(),
         d8: gpio.gpio15.into_push_pull_output(),
-        timer1,
-        timer2,
+        //timer1,
+        //timer2,
         selector_data: 0b00000001,
         col_datapin: gpio.gpio4.into_push_pull_output(), //d2
         col_clockpin: gpio.gpio0.into_push_pull_output(), //d3
         states: [
-            0b11010111, 0b10111101, 0b10001011, 0b11111011, 0b11111101, 0b11110111, 0b11001011,
+            0b11100111, 0b11101011, 0b11101101, 0b11111011, 0b11111101, 0b11110111, 0b11001011,
             0b11111101,
         ],
         current_state: 0,
         row_datapin: gpio.gpio14.into_push_pull_output(), //d5
         row_clockpin: gpio.gpio12.into_push_pull_output(), //d6
-        serial,                                           //serial,
+        ticks: 0,
+        timeout: 0,
     };
     (&HW).lock(|hardware| *hardware = Some(hw));
-    (&HW).lock(|hw| hw.as_mut().unwrap().timer1.enable_interrupts());
+    let timer = unsafe { &*TIMER::ptr() };
+    let dport = unsafe { &*DPORT::ptr() };
+    timer.frc1_ctrl.write(|w| {
+        w.timer_enable()
+            .set_bit()
+            .interrupt_type()
+            .edge()
+            .prescale_divider()
+            .devided_by_1()
+            .rollover()
+            .set_bit()
+    });
+    dport
+        .edge_int_enable
+        .modify(|_, w| w.timer1_edge_int_enable().set_bit());
+    timer.frc1_load.write(|w| unsafe { w.bits(0b111111111) });
     enable_interrupt(InterruptType::TIMER1);
-    (&MILLIS).lock(|time| *time = Some(0));
-
+    (&HW).lock(|hw|{
+        hw.as_mut().unwrap().d4.set_high().unwrap();
+        hw.as_mut().unwrap().d7.set_low().unwrap();
+    });
+    let mut time = 0;
     loop {
-        //delay_ms(2);
-        //(&HW).lock(|hw| hw.as_mut().unwrap().d7.toggle().unwrap());
+        //delay_ms(100000);
+        (&HW).lock(|hw| {
+            hw.as_mut().unwrap().d7.toggle().unwrap();
+            time = hw.as_mut().unwrap().get_ticks();
+        });
+        (&SERIAL).lock(|ser| write!(ser.as_mut().unwrap(), "\r\neeee: -{}\r\n", time).unwrap());
     }
-
     crate::handover();
 
     // Aquí no hay un sistema operativo que se encargue de hacer algo
@@ -181,17 +212,15 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
         //TODO
     }
 }
-static mut CL: u32 = 0;
 
 #[interrupt]
+#[ram]
 fn timer1() {
-    unsafe {
-        CL += 1;
-        if (CL % 50000 == 0) {
-            (&HW).lock(|hw| hw.as_mut().unwrap().d4.toggle().unwrap());
+    (&HW).lock(|hw| {
+        hw.as_mut().unwrap().tick();
+        if hw.as_mut().unwrap().compare_ticks(10) {
+            hw.as_mut().unwrap().reset_ticks();
+            hw.as_mut().unwrap().d4.toggle().unwrap();
         }
-        if (CL % 100 == 0) {
-            (&HW).lock(|hw| hw.as_mut().unwrap().draw());
-        }
-    }
+    });
 }
