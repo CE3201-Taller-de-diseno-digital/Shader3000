@@ -12,7 +12,7 @@ authors = ["Alejandro Soto <alejandro@34project.org>",
 crate-type = ["staticlib", "rlib"]
 
 [target.'cfg(target_arch = "xtensa")'.dependencies]
-esp8266-hal = "0.4.0"
+esp8266-hal = {git = "https://github.com/esp-rs/esp8266-hal", features = ["all_in_ram"]}
 nb = "1.0.0"
 xtensa-lx-rt = { version = "0.5.0", features = ["lx106"] }
 xtensa-lx = "0.3.0"

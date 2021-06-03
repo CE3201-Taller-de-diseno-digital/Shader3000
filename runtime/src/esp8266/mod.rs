@@ -191,7 +191,7 @@ fn main() -> ! {
     });
     let mut time = 0;
     loop {
-        //delay_ms(100000);
+        delay_ms(100000);
         (&HW).lock(|hw| {
             hw.as_mut().unwrap().d7.toggle().unwrap();
             time = hw.as_mut().unwrap().get_ticks();
@@ -218,8 +218,9 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 fn timer1() {
     (&HW).lock(|hw| {
         hw.as_mut().unwrap().tick();
-        if hw.as_mut().unwrap().compare_ticks(10) {
+        if hw.as_mut().unwrap().compare_ticks(10000) {
             hw.as_mut().unwrap().reset_ticks();
+            hw.as_mut().unwrap().draw_three();
             hw.as_mut().unwrap().d4.toggle().unwrap();
         }
     });
