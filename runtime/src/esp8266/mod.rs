@@ -4,6 +4,16 @@
 //! obliga a utilizar más `unsafe` de lo ideal. Como esta es una
 //! plataforma `#![no_std]`, este módulo debe implementar un punto
 //! de entrada específico a la plataforma y un panic handler.
+
+use buddy_system_allocator::LockedHeap;
+#[global_allocator]
+static HEAP_ALLOCATOR: LockedHeap<4> = LockedHeap::<4>::empty();
+
+extern "C" {
+    static _heap_start: u8;
+    static _heap_end: u8;
+}
+
 extern crate xtensa_lx_rt;
 use core::{convert::Infallible, fmt::Write};
 use esp8266_hal::prelude::*;
@@ -75,6 +85,17 @@ pub fn blink(row: usize, col: usize, cond: bool, interval: Interval) {
 pub fn print_led(_col: usize, _row: usize, _value: usize) {
     ()
 }
+
+macro_rules! debug{
+    ($($b:tt)*)=>{
+       {
+           (&SERIAL).lock(|ser|
+           write!(ser.as_mut().unwrap(), $($b)*).unwrap()
+           );
+       }
+    }
+}
+
 //==================================================================================//
 //===========================🅂🄸🅂🅃🄴🄼🄰 🄴🄼🄿🄾🅃🅁🄰🄳🄾======================//
 //==================================================================================//
@@ -146,13 +167,13 @@ impl Hw {
     /// de leds que se encuentran en estado de blink
     pub fn blink(&mut self, interval: Interval) {
         let states = &mut self.states;
-        let mut blinkers = match interval {
+        let blinkers = match interval {
             Interval::Milliseconds => &mut self.mil_blinkers,
             Interval::Seconds => &mut self.sec_blinkers,
             Interval::Minutes => &mut self.min_blinkers,
         };
-        for i in 0..8{
-            states[i] = states[i]^blinkers[i];
+        for i in 0..8 {
+            states[i] = states[i] ^ blinkers[i];
         }
     }
     //======================timer functions====================
@@ -186,6 +207,16 @@ static SERIAL: CriticalSectionMutex<Option<UART0Serial>> = CriticalSectionMutex:
 /// Punto de entrada para ESP8266.
 #[entry]
 fn main() -> ! {
+    // HEAP allocation
+    unsafe {
+        let start = &_heap_start as *const u8;
+        let end = &_heap_end as *const u8;
+
+        HEAP_ALLOCATOR
+            .lock()
+            .init(start as usize, end.offset_from(start) as usize);
+    }
+
     // Se descomponen estructuras de periféricos para formar self::HW
     let peripherals = Peripherals::take().unwrap();
     let gpio = peripherals.GPIO.split();
@@ -254,7 +285,7 @@ fn main() -> ! {
             hw.as_mut().unwrap().d7.toggle().unwrap();
             time = hw.as_mut().unwrap().get_ticks();
         });
-        (&SERIAL).lock(|ser| write!(ser.as_mut().unwrap(), "\r\neeee: -{}\r\n", time).unwrap());
+        debug!("\r\neeee: -{}\r\n", time);
     }
     //crate::handover();
 
@@ -295,14 +326,10 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
         x += 1;
         if x > 100_000_000 {
             x = 0;
-            (&SERIAL).lock(|ser| {
-                write!(
-                    ser.as_mut().unwrap(),
-                    "\r\n-----------Panic cause---------- \n{}\r\n-----This message repeats-----\n",
-                    _info
-                )
-                .unwrap()
-            });
+            debug!(
+                "\r\n-----------Panic cause---------- \n{}\r\n-----This message repeats-----\n",
+                _info
+            );
         }
     }
 }

@@ -5,6 +5,8 @@
 //! implementar las mismas operaciones para plataformas
 //! embebidas y `#![no_std]`.
 
+
+
 /// Imprime un mensaje de depuración.
 pub fn debug(hint: usize) {
     dbg!(hint);

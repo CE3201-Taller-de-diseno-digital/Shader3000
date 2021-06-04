@@ -11,6 +11,10 @@
 //! vez de eso, este módulo debe realizar a llamadas a
 //! `crate::sys::*` cuando se necesita una operación
 //! que depende de la plataforma.
+extern crate alloc;
+
+//type List = Vec<bool>;
+//type Mat = Vec<Vec<bool>>;
 
 /// Retorna cero.
 ///
@@ -54,20 +58,41 @@ pub extern "C" fn builtin_delay_min(mins: u32) {
 
 #[no_mangle]
 pub extern "C" fn builtin_blink_mil(row: usize, col: usize, cond: bool) {
-    crate::sys::blink(row, col,cond, crate::sys::Interval::Milliseconds);
+    crate::sys::blink(row, col, cond, crate::sys::Interval::Milliseconds);
 }
 
 #[no_mangle]
 pub extern "C" fn builtin_blink_seg(row: usize, col: usize, cond: bool) {
-    crate::sys::blink(row, col,cond, crate::sys::Interval::Seconds);
+    crate::sys::blink(row, col, cond, crate::sys::Interval::Seconds);
 }
 
 #[no_mangle]
 pub extern "C" fn builtin_blink_min(row: usize, col: usize, cond: bool) {
-    crate::sys::blink(row, col,cond, crate::sys::Interval::Minutes);
+    crate::sys::blink(row, col, cond, crate::sys::Interval::Minutes);
 }
 
 #[no_mangle]
 pub extern "C" fn print_led(row: usize, col: usize, value: usize) {
     crate::sys::print_led(row, col, value);
 }
+
+//#[no_mangle]
+//pub extern "C" fn builtin_new_list() -> *mut List {
+//    Box::into_raw(Box::default())
+//}
+//
+//#[no_mangle]
+//pub extern "C" fn builtin_drop_list(list: *mut List) {
+//    unsafe {
+//        Box::from_raw(list);
+//    }
+//}
+//
+//#[no_mangle]
+//pub extern "C" fn builtin_printledx_m(index: isize, mat: *mut Mat) {
+//    let mat = unsafe {
+//        Box::from_raw(mat);
+//    };
+//    
+//    Box::leak(mat);
+//}
