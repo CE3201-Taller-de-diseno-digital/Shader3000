@@ -31,7 +31,7 @@ where
 
 /// Detieen el programa por una cantidad de milisegundos.
 pub fn delay_ms(mut millis: u32) {
-    (&HW).lock(|hw| hw.as_mut().unwrap().timeout = millis);
+    (&HW).lock(|hw| hw.as_mut().unwrap().timeout = millis*10);
     let mut finished = false;
     while (!finished) {
         (&HW).lock(|hw| finished = hw.as_mut().unwrap().delay_finished());
@@ -131,6 +131,7 @@ impl Hw {
     pub fn delay_finished(&mut self) -> bool {
         self.timeout == 0
     }
+
 }
 /// Instancia global de periféricos, ya que no tenemos atómicos.
 static HW: CriticalSectionMutex<Option<Hw>> = CriticalSectionMutex::new(None);
@@ -183,7 +184,7 @@ fn main() -> ! {
     dport
         .edge_int_enable
         .modify(|_, w| w.timer1_edge_int_enable().set_bit());
-    timer.frc1_load.write(|w| unsafe { w.bits(0b111111111) });
+    timer.frc1_load.write(|w| unsafe { w.bits(8000) }); //pasos de 100us
     enable_interrupt(InterruptType::TIMER1);
     (&HW).lock(|hw|{
         hw.as_mut().unwrap().d4.set_high().unwrap();
@@ -191,7 +192,7 @@ fn main() -> ! {
     });
     let mut time = 0;
     loop {
-        delay_ms(100000);
+        delay_ms(1000);
         (&HW).lock(|hw| {
             hw.as_mut().unwrap().d7.toggle().unwrap();
             time = hw.as_mut().unwrap().get_ticks();
@@ -218,7 +219,8 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 fn timer1() {
     (&HW).lock(|hw| {
         hw.as_mut().unwrap().tick();
-        if hw.as_mut().unwrap().compare_ticks(10000) {
+        if hw.as_mut().unwrap().compare_ticks(50)//5 milisegundos 
+        {
             hw.as_mut().unwrap().reset_ticks();
             hw.as_mut().unwrap().draw_three();
             hw.as_mut().unwrap().d4.toggle().unwrap();
