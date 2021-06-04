@@ -49,6 +49,9 @@ pub fn debug(hint: usize) {
     });
 }
 
+pub fn debug_int(value: i32) {}
+pub fn debug_bool() {}
+
 pub fn blink(row: usize, col: usize, cond: bool, interval: Interval) {
     if cond && row < 8 && col < 8 {
         (&HW).lock(|hw| {
@@ -132,7 +135,8 @@ impl Hw {
         &mut self.next_row();
     }
     pub fn next_row(&mut self) {
-        if self.current_state < 2 { //cambiar a 7 cuando ya no tenga que probar con un solo registro
+        if self.current_state < 2 {
+            //cambiar a 7 cuando ya no tenga que probar con un solo registro
             self.current_state += 1;
         } else {
             self.current_state = 0;
@@ -142,25 +146,13 @@ impl Hw {
     /// de leds que se encuentran en estado de blink
     pub fn blink(&mut self, interval: Interval) {
         let states = &mut self.states;
-        match interval {
-            Interval::Milliseconds => {
-                let blinkers = &mut self.mil_blinkers;
-                for i in 0..8 {
-                    states[i] = states[i] ^ blinkers[i]
-                }
-            }
-            Interval::Seconds => {
-                let blinkers = &mut self.sec_blinkers;
-                for i in 0..8 {
-                    states[i] = states[i] ^ blinkers[i]
-                }
-            }
-            Interval::Minutes => {
-                let blinkers = &mut self.min_blinkers;
-                for i in 0..8 {
-                    states[i] = states[i] ^ blinkers[i]
-                }
-            }
+        let mut blinkers = match interval {
+            Interval::Milliseconds => &mut self.mil_blinkers,
+            Interval::Seconds => &mut self.sec_blinkers,
+            Interval::Minutes => &mut self.min_blinkers,
+        };
+        for i in 0..8{
+            states[i] = states[i]^blinkers[i];
         }
     }
     //======================timer functions====================
