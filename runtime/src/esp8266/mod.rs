@@ -206,8 +206,6 @@ fn main() -> ! {
         d4: gpio.gpio2.into_push_pull_output(),
         d7: gpio.gpio13.into_push_pull_output(),
         //d8: gpio.gpio15.into_push_pull_output(),
-        //timer1,
-        //timer2,
         selector_data: 0b00000001,
         col_datapin: gpio.gpio4.into_push_pull_output(), //d2
         col_clockpin: gpio.gpio0.into_push_pull_output(), //d3

@@ -55,7 +55,7 @@ El equipo tenía varios microcontroladores a disposición. Se consideraron princ
 
 Leds y resistencias fueron seleccionas según disponibilidad, aunque para el valor específico de las últimas se prefirió usar algo que evitara la posibilidad de que se quemara cualquiera de los leds, en detrimento de la luminosidad posible en la configuración.
 
-Para control de la matriz, se recurrió al uso de un registro de corrimiento 74lS164N, cuya hoja de datos puede ser encontrada en [@shiftregister-datasheet], para registrar los leds activos de cada columna según fila. Esta decisión fue más por disponibilidad que otro factor, aunque una aspecto conveniente del dispositivo es que es fácilmente reemplazable por registros de corrimiento fáciles de conseguir (como el 72HC595). Para controlar el encendido secuencial de cada fila se utilizó un multiplexor 74HC4067, esto porque es más simple de manipular que un registro de corrimiento y la disponibilidad de registros de corrimiento era insuficiente como para permitir los dos montajes requeridos (experimental y entrega). La hoja de datos del multiplexor puede ser encontrada en [@multiplexor-datasheet].
+Para control de la matriz, se recurrió al uso de un registro de corrimiento 74lS164N, cuya hoja de datos puede ser encontrada en [@shiftregister-datasheet], para registrar los leds activos de cada columna según fila. Esta decisión fue más por disponibilidad que otro factor, aunque una aspecto conveniente del dispositivo es que es fácilmente reemplazable por registros de corrimiento fáciles de conseguir (como el 72HC595). Para controlar el encendido secuencial de cada fila se utilizó otro registro de corrimiento, utilizandolo como un multiplexor. La razón por la que no se procedió a utilizar directamente un multiplexor es que a nivel de programación resulta más simple implementar las funciones necesarias para manipular un solo componente y cambiar los valores específicos en los llamados a esas funciones, que implementar conjuntos de funciones para dos componentes distintos. 
 
 ## 2.3. Máquina virtual vs generación de código máquina
 
@@ -79,7 +79,48 @@ Como el equipo de trabajo está integrado por estudiantes, debe notarse que es i
 
 # 5. Problemas encontrados
 
-1. Problema 1
+1. Inconsistencia de timers en el esp8266
+   - _Descripción_: lorem ipsum
+
+   - _Intentos de solución_:
+
+     1. a
+     2. b
+     3. c
+
+   - _Solución encontrada_: lorem ipsum
+
+   - _Conclusiones_:
+     1. a
+     2. b
+     3. c
+   - _Recomendaciones_:
+     - lorem ipsum
+   - _Bibliografía_:
+     - lorem ipsum
+
+1. Archivo de memoria incorrecto en construcción de ejecutable para esp8266
+   - _Descripción_: lorem ipsum
+
+   - _Intentos de solución_:
+
+     1. a
+     2. b
+     3. c
+
+   - _Solución encontrada_: lorem ipsum
+
+   - _Conclusiones_:
+     1. a
+     2. b
+     3. c
+   - _Recomendaciones_:
+     - lorem ipsum
+   - _Bibliografía_:
+     - lorem ipsum
+
+
+2. Problema 1
 
    - _Descripción_: lorem ipsum
 
