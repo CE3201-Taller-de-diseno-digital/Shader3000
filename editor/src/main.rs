@@ -37,7 +37,6 @@ fn build_ui(application: &gtk::Application) {
 
     window.set_position(gtk::WindowPosition::Center);
 
-
     let provider = gtk::CssProvider::new();
     // Load the CSS file
     provider
