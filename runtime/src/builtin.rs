@@ -51,3 +51,23 @@ pub extern "C" fn builtin_delay_seg(secs: u32) {
 pub extern "C" fn builtin_delay_min(mins: u32) {
     crate::sys::delay_ms(mins * 60000);
 }
+
+#[no_mangle]
+pub extern "C" fn builtin_blink_mil(row: usize, col: usize, cond: bool) {
+    crate::sys::blink(row, col,cond, crate::sys::Interval::Milliseconds);
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_blink_seg(row: usize, col: usize, cond: bool) {
+    crate::sys::blink(row, col,cond, crate::sys::Interval::Seconds);
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_blink_min(row: usize, col: usize, cond: bool) {
+    crate::sys::blink(row, col,cond, crate::sys::Interval::Minutes);
+}
+
+#[no_mangle]
+pub extern "C" fn print_led(row: usize, col: usize, value: usize) {
+    crate::sys::print_led(row, col, value);
+}
