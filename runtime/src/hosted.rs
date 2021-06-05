@@ -5,8 +5,6 @@
 //! implementar las mismas operaciones para plataformas
 //! embebidas y `#![no_std]`.
 
-
-
 /// Imprime un mensaje de depuración.
 pub fn debug(hint: usize) {
     dbg!(hint);
@@ -16,12 +14,14 @@ pub fn debug(hint: usize) {
 pub fn delay_ms(millis: u32) {
     std::thread::sleep(std::time::Duration::from_millis(millis as u64));
 }
-pub enum Interval{
-    Milliseconds, Seconds, Minutes,
+pub enum Interval {
+    Milliseconds,
+    Seconds,
+    Minutes,
 }
-pub fn blink(_row: usize, _col: usize,_cond: bool, _interval:Interval){
+pub fn blink(_row: usize, _col: usize, _cond: bool, _interval: Interval) {
     ()
 }
-pub fn print_led(_col: usize, _row: usize, _value: usize){
+pub fn print_led(_col: usize, _row: usize, _value: usize) {
     ()
 }

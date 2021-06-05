@@ -11,6 +11,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::path::Path;
+use std::process::{Command, Stdio};
 
 fn main() {
     let application = gtk::Application::new(Some("com.editor.animationLED"), Default::default())
@@ -36,7 +37,6 @@ fn build_ui(application: &gtk::Application) {
     window.set_application(Some(application));
 
     window.set_position(gtk::WindowPosition::Center);
-
 
     let provider = gtk::CssProvider::new();
     // Load the CSS file
@@ -98,25 +98,50 @@ fn build_ui(application: &gtk::Application) {
     let doc_name: gtk::Label = builder.get_object("doc_name").unwrap();
 
     //File
-    let current_file = gtk::Label::new(Some("unnamed.txt"));
+    let current_file = gtk::Label::new(Some("build/tmp.led"));
 
     //               ___________________
     //______________/  Add funtionality
 
-    compile_run.connect_clicked(clone!(@weak save => move |_| {
+    compile.connect_clicked(
+        clone!(@weak save, @weak current_file, @weak terminal=> move |_| {
 
-       save.activate();
+            save.activate();
 
-    }));
+            let mut cmd_base: String = "./compiler -st esp8266 -o ?? ".to_owned();
 
-    compile.connect_clicked(clone!(@weak save=> move |_| {
+            let filename: &str = &current_file.get_text();
 
-        save.activate();
+            cmd_base.push_str(filename);
+
+
+            //let cmd = Command::new(cmd_base).stdout(Stdio::piped()).output().unwrap();
+            //let answer = String::from_utf8(cmd.stdout).unwrap();
+
+
+            //let term_buffer = terminal.get_buffer().unwrap();
+            //let mut bounds = term_buffer.get_bounds();
+            //term_buffer.insert(&mut bounds.1,&answer);
+
+
+        }),
+    );
+
+    compile_run.connect_clicked(clone!(@weak compile, @weak terminal => move |_| {
+
+       compile.activate();
+
+       //let cmd = Command::new("ls").stdout(Stdio::piped()).output().unwrap();
+       //let answer = String::from_utf8(cmd.stdout).unwrap();
+
+       //let term_buffer = terminal.get_buffer().unwrap();
+       //let mut bounds = term_buffer.get_bounds();
+       //term_buffer.insert(&mut bounds.1,&answer);
 
     }));
 
     new.connect_activate(
-        clone!(@weak sourceview , @weak doc_name, @weak current_file, @weak save => move |_| {
+        clone!(@weak sourceview ,@weak doc_name, @weak current_file, @weak save => move |_| {
 
             save.activate();
 
@@ -127,14 +152,14 @@ fn build_ui(application: &gtk::Application) {
 
             doc_name.set_text("unnamed");
 
-            current_file.set_text("unnamed.txt");
+            current_file.set_text("build/tmp.led");
 
         }),
     );
 
-    let sourceview2 = sourceview.clone();
-    let doc_name2 = doc_name.clone();
-    let current_file2 = current_file.clone();
+    let srcview_open = sourceview.clone();
+    let doc_name_open = doc_name.clone();
+    let current_file_open = current_file.clone();
 
     open.connect_activate(clone!(@weak window , @weak save => move |_| {
 
@@ -150,7 +175,7 @@ fn build_ui(application: &gtk::Application) {
 
         let save_for_chooser = save.clone();
 
-        file_chooser.connect_response(clone!(@weak sourceview2, @weak doc_name2 ,@weak current_file2 ,@weak save_for_chooser=> move|file_chooser, response| {
+        file_chooser.connect_response(clone!(@weak srcview_open, @weak doc_name_open ,@weak current_file_open ,@weak save_for_chooser=> move|file_chooser, response| {
             if response == gtk::ResponseType::Ok {
 
                 save_for_chooser.activate();
@@ -162,7 +187,7 @@ fn build_ui(application: &gtk::Application) {
                 let mut contents = String::new();
                 let _ = reader.read_to_string(&mut contents);
 
-                sourceview2
+                srcview_open
                     .get_buffer()
                     .expect("Couldn't get window")
                     .set_text(&contents);
@@ -170,8 +195,8 @@ fn build_ui(application: &gtk::Application) {
                 match filename.to_str() {
                     None => panic!("new path is not a valid UTF-8 sequence"),
                     Some(name) => {  let chunks:Vec<&str> = name.split("/").collect();
-                                     doc_name2.set_text(&chunks[chunks.len()-1]);
-                                     current_file2.set_text(name);
+                                     doc_name_open.set_text(&chunks[chunks.len()-1]);
+                                     current_file_open.set_text(name);
                                     }
                 }
             }
@@ -181,40 +206,51 @@ fn build_ui(application: &gtk::Application) {
         file_chooser.show_all();
     }));
 
-    let current_file4 = current_file.clone();
+    let current_file_save = current_file.clone();
 
-    let sourceview4 = sourceview.clone();
+    let src_view_save = sourceview.clone();
 
-    save.connect_activate(clone!(@weak current_file4,@weak sourceview4 => move |_| {
+    //let terminal_save = terminal.clone();
 
-        let filename = current_file4.get_text();
+    save.connect_activate(
+        clone!(@weak current_file_save,@weak src_view_save,@weak terminal => move |_| {
 
-        let buffer = sourceview4.get_buffer().expect("Couldn't get window");
+            let filename = current_file_save.get_text();
 
-        let bounds = buffer.get_bounds();
+            let buffer = src_view_save.get_buffer().expect("Couldn't get window");
 
-        let text = buffer.get_text(&bounds.0,&bounds.1,true);
+            let bounds = buffer.get_bounds();
 
-        let path = Path::new(filename.as_str());
-        let display = path.display();
+            let text = buffer.get_text(&bounds.0,&bounds.1,true);
 
-        let mut file = match File::create(&path) {
-                Err(why) => panic!("couldn't create {}: {}", display, why),
-                Ok(file) => file,
-            };
+            let path = Path::new(filename.as_str());
+            let display = path.display();
 
-        match file.write_all(text.unwrap().as_str().as_bytes()) {
-                Err(why) => panic!("couldn't write to {}: {}", display, why),
-                Ok(_) => println!("successfully wrote to {}", display),
-            };
+            let mut file = match File::create(&path) {
+                    Err(why) => panic!("couldn't create {}: {}", display, why),
+                    Ok(file) => file,
+                };
 
-    }));
+            match file.write_all(text.unwrap().as_str().as_bytes()) {
+                    Err(why) => panic!("couldn't write to {}: {}", display, why),
+                    Ok(_) => {  println!("successfully wrote to {}", display);
+                                let term_buffer = terminal.get_buffer().unwrap();
+                                let mut bounds = term_buffer.get_bounds();
+                                let mut saved_msg: String = "Successfully saved at: ".to_owned();
+                                saved_msg.push_str(&filename.as_str());
+                                saved_msg.push_str("\n");
+                                term_buffer.insert(&mut bounds.1,&saved_msg);
+                                }
+                };
 
-    let sourceview3 = sourceview.clone();
+        }),
+    );
 
-    let doc_name3 = doc_name.clone();
+    let src_view_as = sourceview.clone();
 
-    let current_file3 = current_file.clone();
+    let doc_name_as = doc_name.clone();
+
+    let current_file_as = current_file.clone();
 
     save_as.connect_activate(clone!(@weak window => move |_| {
 
@@ -230,12 +266,12 @@ fn build_ui(application: &gtk::Application) {
 
         file_chooser.set_do_overwrite_confirmation(true);
 
-        file_chooser.connect_response(clone!(@weak sourceview3, @weak doc_name3 ,@weak current_file3 => move|file_chooser, response| {
+        file_chooser.connect_response(clone!(@weak src_view_as, @weak doc_name_as ,@weak current_file_as => move|file_chooser, response| {
             if response == gtk::ResponseType::Ok {
 
                 let filename = file_chooser.get_filename().expect("Couldn't get filename");
 
-                let buffer = sourceview3.get_buffer().expect("Couldn't get window");
+                let buffer = src_view_as.get_buffer().expect("Couldn't get window");
 
                 let bounds = buffer.get_bounds();
 
@@ -258,8 +294,8 @@ fn build_ui(application: &gtk::Application) {
                 match filename.to_str() {
                     None => panic!("new path is not a valid UTF-8 sequence"),
                     Some(name) => {  let chunks:Vec<&str> = name.split("/").collect();
-                                     doc_name3.set_text(&chunks[chunks.len()-1]);
-                                     current_file3.set_text(name);
+                                     doc_name_as.set_text(&chunks[chunks.len()-1]);
+                                     current_file_as.set_text(name);
                                     }
                 }
 
@@ -282,7 +318,9 @@ fn build_ui(application: &gtk::Application) {
         about_win.show_all();
     });
 
-    quit.connect_activate(clone!(@weak window => move |_| {
+    quit.connect_activate(clone!(@weak window , @weak save => move |_| {
+
+        save.activate();
 
         window.close();
 
