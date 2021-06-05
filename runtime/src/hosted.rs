@@ -22,6 +22,6 @@ pub enum Interval {
 pub fn blink(_row: usize, _col: usize, _cond: bool, _interval: Interval) {
     ()
 }
-pub fn print_led(_col: usize, _row: usize, _value: usize) {
+pub fn print_led(_col: usize, _row: usize, _value: bool) {
     ()
 }

@@ -13,15 +13,17 @@
 //! que depende de la plataforma.
 extern crate alloc;
 
-//type List = Vec<bool>;
-//type Mat = Vec<Vec<bool>>;
+use alloc::vec::Vec;
+use alloc::rc::Rc;
+type List = Vec<bool>;
+type Mat = Vec<Vec<bool>>;
 
 /// Retorna cero.
 ///
 ///TODO: Eliminar
 #[no_mangle]
 pub extern "C" fn builtin_zero() -> usize {
-    0
+    0 
 }
 
 /// Incrementa un entero.
@@ -72,27 +74,48 @@ pub extern "C" fn builtin_blink_min(row: usize, col: usize, cond: bool) {
 }
 
 #[no_mangle]
-pub extern "C" fn print_led(row: usize, col: usize, value: usize) {
+pub extern "C" fn builtin_new_list() -> *const List {
+    Rc::into_raw(Rc::default())
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_drop_list(list: *mut List) {
+    unsafe {
+        //dropea valor al tomar ownership
+        Rc::from_raw(list); 
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn print_led(row: usize, col: usize, value: bool) {
     crate::sys::print_led(row, col, value);
 }
 
-//#[no_mangle]
-//pub extern "C" fn builtin_new_list() -> *mut List {
-//    Box::into_raw(Box::default())
-//}
-//
-//#[no_mangle]
-//pub extern "C" fn builtin_drop_list(list: *mut List) {
-//    unsafe {
-//        Box::from_raw(list);
-//    }
-//}
-//
-//#[no_mangle]
-//pub extern "C" fn builtin_printledx_m(index: isize, mat: *mut Mat) {
-//    let mat = unsafe {
-//        Box::from_raw(mat);
-//    };
-//
-//    Box::leak(mat);
-//}
+#[no_mangle]
+pub extern "C" fn builtin_printledx_f(index: isize, mat: *mut List) {
+    let mut mat = unsafe {
+        Rc::from_raw(mat)
+    };
+    let mut mat = unsafe{Rc::get_mut_unchecked(&mut mat)};
+
+    
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_printledx_c(index: isize, mat: *mut List) {
+    let mut mat = unsafe {
+        Rc::from_raw(mat)
+    };
+    let mut mat = unsafe{Rc::get_mut_unchecked(&mut mat)};
+    
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_printledx_m(index: isize, mat: *mut Mat) {
+    let mut mat = unsafe {
+        Rc::from_raw(mat)
+    };
+    let mut mat = unsafe{Rc::get_mut_unchecked(&mut mat)};
+    
+}
+

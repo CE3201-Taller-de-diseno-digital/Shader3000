@@ -27,6 +27,15 @@ use esp8266_hal::{
 use xtensa_lx::mutex::{CriticalSectionMutex, Mutex};
 mod atomic;
 
+macro_rules! debug{
+    ($($b:tt)*)=>{
+       {
+           (&SERIAL).lock(|ser|
+           write!(ser.as_mut().unwrap(), $($b)*).unwrap()
+           );
+       }
+    }
+}
 //==================================================================================//
 //================================🄱🅄🄸🄻🅃🄸🄽🅂==================================//
 //==================================================================================//
@@ -58,10 +67,6 @@ pub fn debug(hint: usize) {
         digital_write(&mut hw.d7, hint & 0b10)
     });
 }
-
-pub fn debug_int(value: i32) {}
-pub fn debug_bool() {}
-
 pub fn blink(row: usize, col: usize, cond: bool, interval: Interval) {
     if cond && row < 8 && col < 8 {
         (&HW).lock(|hw| {
@@ -72,9 +77,9 @@ pub fn blink(row: usize, col: usize, cond: bool, interval: Interval) {
                 Interval::Minutes => hw.min_blinkers,
             };
             if cond {
-                blinkers[row] = blinkers[row] | (0b10000000 >> col)
+                blinkers[row] |= (0b10000000 >> col)
             } else {
-                blinkers[row] = blinkers[row] & !(0b10000000 >> col)
+                blinkers[row] &= !(0b10000000 >> col)
             }
         });
     } else {
@@ -82,17 +87,39 @@ pub fn blink(row: usize, col: usize, cond: bool, interval: Interval) {
     }
 }
 
-pub fn print_led(_col: usize, _row: usize, _value: usize) {
-    ()
+pub fn print_led(col: usize, row: usize, value: bool) {
+    if col < 8 && row < 8 {
+        (&HW).lock(|hw| {
+            let col = 7 - col;
+            let hw = hw.as_mut().unwrap();
+            match value {
+                false => hw.states[row] &= !(hw.selector_data << col),
+                true => hw.states[row] |= (hw.selector_data << col),
+            }
+        })
+    }
 }
-
-macro_rules! debug{
-    ($($b:tt)*)=>{
-       {
-           (&SERIAL).lock(|ser|
-           write!(ser.as_mut().unwrap(), $($b)*).unwrap()
-           );
-       }
+pub fn print_ledx_f(row: usize, value: usize) {
+    if row < 8 {
+        (&HW).lock(|hw| hw.as_mut().unwrap().states[row] = value);
+    }
+}
+pub fn print_ledx_c(col: usize, value: usize) {
+    if col < 8 {
+        (&HW).lock(|hw| {
+            let hw = hw.as_mut().unwrap();
+            let col = 7 - col;
+            for row in &mut hw.states {
+                let led_state = value & (hw.selector_data << col);
+                if led_state == 0 {
+                    //hacer el led un 0
+                    *row &= !(hw.selector_data << col);
+                } else {
+                    //prender led
+                    *row |= (hw.selector_data << col);
+                }
+            }
+        });
     }
 }
 
@@ -173,7 +200,7 @@ impl Hw {
             Interval::Minutes => &mut self.min_blinkers,
         };
         for i in 0..8 {
-            states[i] = states[i] ^ blinkers[i];
+            states[i]  ^= blinkers[i];
         }
     }
     //======================timer functions====================
@@ -207,8 +234,6 @@ static SERIAL: CriticalSectionMutex<Option<UART0Serial>> = CriticalSectionMutex:
 /// Punto de entrada para ESP8266.
 #[entry]
 fn main() -> ! {
-
-
     // Se descomponen estructuras de periféricos para formar self::HW
     let peripherals = Peripherals::take().unwrap();
     let gpio = peripherals.GPIO.split();
@@ -234,7 +259,7 @@ fn main() -> ! {
         ],
 
         sec_blinkers: [
-            0b01000000, 0b10100000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000,
+            0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000,
             0b00000000,
         ],
 
@@ -280,12 +305,19 @@ fn main() -> ! {
         hw.as_mut().unwrap().d7.set_low().unwrap();
     });
     let mut time = 0;
+    let mut flag = true;
     loop {
         delay_ms(1000);
         (&HW).lock(|hw| {
             hw.as_mut().unwrap().d7.toggle().unwrap();
             time = hw.as_mut().unwrap().get_ticks();
         });
+        if flag {
+            print_ledx_c(0, 0b0000_0000)
+        } else {
+            print_ledx_c(0, 0b1111_1111)
+        }
+        flag = !flag;
         debug!("\r\neeee: -{}\r\n", time);
     }
     //crate::handover();
@@ -301,7 +333,7 @@ fn timer1() {
     (&HW).lock(|hw| {
         let hw = hw.as_mut().unwrap();
         hw.tick();
-        if hw.compare_ticks(10) {
+        if hw.compare_ticks(30) {
             //millis
             hw.draw();
             hw.blink(Interval::Milliseconds);
