@@ -7,7 +7,7 @@
 
 use buddy_system_allocator::LockedHeap;
 #[global_allocator]
-static HEAP_ALLOCATOR: LockedHeap<4> = LockedHeap::<4>::empty();
+static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::<32>::empty();
 
 extern "C" {
     static _heap_start: u8;
@@ -207,15 +207,7 @@ static SERIAL: CriticalSectionMutex<Option<UART0Serial>> = CriticalSectionMutex:
 /// Punto de entrada para ESP8266.
 #[entry]
 fn main() -> ! {
-    // HEAP allocation
-    unsafe {
-        let start = &_heap_start as *const u8;
-        let end = &_heap_end as *const u8;
 
-        HEAP_ALLOCATOR
-            .lock()
-            .init(start as usize, end.offset_from(start) as usize);
-    }
 
     // Se descomponen estructuras de periféricos para formar self::HW
     let peripherals = Peripherals::take().unwrap();
@@ -256,6 +248,15 @@ fn main() -> ! {
         ticks: 0,
         timeout: 0,
     };
+    // HEAP allocation
+    unsafe {
+        let start = &_heap_start as *const u8;
+        let end = &_heap_end as *const u8;
+
+        HEAP_ALLOCATOR
+            .lock()
+            .init(start as usize, end.offset_from(start) as usize);
+    }
     (&HW).lock(|hardware| *hardware = Some(hw));
     let timer = unsafe { &*TIMER::ptr() };
     let dport = unsafe { &*DPORT::ptr() };
