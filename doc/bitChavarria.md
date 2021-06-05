@@ -106,7 +106,7 @@ url{https://wiki.gnome.org/Projects/GtkSourceView}
 
 ### 2 de junio
 
-- Comienza a testear se el lexer.
+- Se comienza a testear el lexer con cada uno de los casos requeridos en la especificación del proyecto. Implementar un archivo .lang especifico para el lenguaje de programacion que se ha creado.
 
 ### 3 de junio
 

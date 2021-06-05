@@ -366,8 +366,3 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
         }
     }
 }
-
-#[exception]
-fn exception() {
-    panic!("hardware exception");
-}
