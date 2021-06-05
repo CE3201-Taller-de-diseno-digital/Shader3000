@@ -4,6 +4,8 @@
 //! obliga a utilizar más `unsafe` de lo ideal. Como esta es una
 //! plataforma `#![no_std]`, este módulo debe implementar un punto
 //! de entrada específico a la plataforma y un panic handler.
+extern crate alloc;
+use alloc::vec::Vec;
 
 use buddy_system_allocator::LockedHeap;
 #[global_allocator]
@@ -77,7 +79,7 @@ pub fn blink(row: usize, col: usize, cond: bool, interval: Interval) {
                 Interval::Minutes => hw.min_blinkers,
             };
             if cond {
-                blinkers[row] |= (0b10000000 >> col)
+                blinkers[row] |= 0b10000000 >> col
             } else {
                 blinkers[row] &= !(0b10000000 >> col)
             }
@@ -94,14 +96,18 @@ pub fn print_led(col: usize, row: usize, value: bool) {
             let hw = hw.as_mut().unwrap();
             match value {
                 false => hw.states[row] &= !(hw.selector_data << col),
-                true => hw.states[row] |= (hw.selector_data << col),
+                true => hw.states[row] |= hw.selector_data << col,
             }
         })
+    } else {
+        panic!("lenght of printed matrix is out of bounds")
     }
 }
 pub fn print_ledx_f(row: usize, value: usize) {
     if row < 8 {
         (&HW).lock(|hw| hw.as_mut().unwrap().states[row] = value);
+    } else {
+        debug!("lenght of printed matrix is out of bounds")
     }
 }
 pub fn print_ledx_c(col: usize, value: usize) {
@@ -116,10 +122,12 @@ pub fn print_ledx_c(col: usize, value: usize) {
                     *row &= !(hw.selector_data << col);
                 } else {
                     //prender led
-                    *row |= (hw.selector_data << col);
+                    *row |= hw.selector_data << col;
                 }
             }
         });
+    } else {
+        debug!("lenght of printed matrix is out of bounds")
     }
 }
 
@@ -200,7 +208,7 @@ impl Hw {
             Interval::Minutes => &mut self.min_blinkers,
         };
         for i in 0..8 {
-            states[i]  ^= blinkers[i];
+            states[i] ^= blinkers[i];
         }
     }
     //======================timer functions====================
@@ -249,24 +257,10 @@ fn main() -> ! {
         selector_data: 0b00000001,
         col_datapin: gpio.gpio4.into_push_pull_output(), //d2
         col_clockpin: gpio.gpio0.into_push_pull_output(), //d3
-        states: [
-            0b11100111, 0b11101011, 0b11101101, 0b11111011, 0b11111101, 0b11110111, 0b11001011,
-            0b11111101,
-        ],
-        mil_blinkers: [
-            0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000,
-            0b00000000,
-        ],
-
-        sec_blinkers: [
-            0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000,
-            0b00000000,
-        ],
-
-        min_blinkers: [
-            0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000,
-            0b00000000,
-        ],
+        states: [0b11100111, 0b11101011, 0b11101101, 0, 0, 0, 0, 0],
+        mil_blinkers: [0, 0, 0, 0, 0, 0, 0, 0],
+        sec_blinkers: [0, 0, 0, 0, 0, 0, 0, 0],
+        min_blinkers: [0, 0, 0, 0, 0, 0, 0, 0],
         current_state: 0,
         row_datapin: gpio.gpio14.into_push_pull_output(), //d5
         row_clockpin: gpio.gpio12.into_push_pull_output(), //d6
@@ -306,6 +300,7 @@ fn main() -> ! {
     });
     let mut time = 0;
     let mut flag = true;
+    let mut testvec: Vec<bool> = Vec::new();
     loop {
         delay_ms(1000);
         (&HW).lock(|hw| {
@@ -319,6 +314,9 @@ fn main() -> ! {
         }
         flag = !flag;
         debug!("\r\neeee: -{}\r\n", time);
+        if testvec.len() < 500{
+            testvec.push(true);
+        }
     }
     //crate::handover();
 
