@@ -9,12 +9,18 @@
 //! Para garantizar agnosticismo en varias partes donde
 //! no se necesita conocer detalles de la plataforma. En
 //! vez de eso, este módulo debe realizar a llamadas a
-//! `crate::sys::*` cuando se necesita una operación
+//! `sys::*` cuando se necesita una operación
 //! que depende de la plataforma.
-extern crate alloc;
 
-use alloc::rc::Rc;
-use alloc::vec::Vec;
+use alloc::{rc::Rc, vec::Vec};
+use core::{convert::TryInto, iter};
+
+use crate::{
+    chrono::{Duration, Ticks},
+    matrix::State,
+    sys,
+};
+
 type List = Vec<bool>;
 type Mat = Vec<Vec<bool>>;
 
@@ -36,114 +42,151 @@ pub extern "C" fn builtin_inc(n: usize) -> usize {
 
 /// Imprime información de epuración en alguna manera no especificada.
 #[no_mangle]
-pub extern "C" fn builtin_debug(hint: usize) {
-    crate::sys::debug(hint);
-}
-
-/// Detiene el programa por una cantidad de milisegundos.
-#[no_mangle]
-pub extern "C" fn builtin_delay_mil(millis: u32) {
-    crate::sys::delay_ms(millis);
-}
-
-/// Detiene el programa por una cantidad de segundos.
-#[no_mangle]
-pub extern "C" fn builtin_delay_seg(secs: u32) {
-    crate::sys::delay_ms(secs * 1000);
-}
-
-/// Detiene el programa por una cantidad de minutos.
-#[no_mangle]
-pub extern "C" fn builtin_delay_min(mins: u32) {
-    crate::sys::delay_ms(mins * 60000);
+pub extern "C" fn builtin_debug(hint: isize) {
+    sys_debug!("builtin_debug(0x{:x})", hint);
 }
 
 #[no_mangle]
-pub extern "C" fn builtin_blink_mil(row: usize, col: usize, cond: bool) {
-    crate::sys::blink(row, col, cond, crate::sys::Interval::Milliseconds);
-}
-
-#[no_mangle]
-pub extern "C" fn builtin_blink_seg(row: usize, col: usize, cond: bool) {
-    crate::sys::blink(row, col, cond, crate::sys::Interval::Seconds);
-}
-
-#[no_mangle]
-pub extern "C" fn builtin_blink_min(row: usize, col: usize, cond: bool) {
-    crate::sys::blink(row, col, cond, crate::sys::Interval::Minutes);
-}
-
-#[no_mangle]
-pub extern "C" fn builtin_new_list() -> *const List {
-    Rc::into_raw(Rc::default())
+pub extern "C" fn builtin_new_list() -> *mut List {
+    Rc::into_raw(Rc::<List>::default()) as *mut _
 }
 
 #[no_mangle]
 pub extern "C" fn builtin_drop_list(list: *mut List) {
+    //dropea valor al tomar ownership
     unsafe {
-        //dropea valor al tomar ownership
         Rc::from_raw(list);
     }
 }
 
+/// Detiene el programa por una cantidad de milisegundos.
 #[no_mangle]
-pub extern "C" fn print_led(row: usize, col: usize, value: bool) {
-    crate::sys::print_led(row, col, value);
+pub extern "C" fn builtin_delay_mil(millis: isize) {
+    sys::delay(milliseconds(millis));
+}
+
+/// Detiene el programa por una cantidad de segundos.
+#[no_mangle]
+pub extern "C" fn builtin_delay_seg(secs: isize) {
+    sys::delay(seconds(secs));
+}
+
+/// Detiene el programa por una cantidad de minutos.
+#[no_mangle]
+pub extern "C" fn builtin_delay_min(mins: isize) {
+    sys::delay(minutes(mins));
 }
 
 #[no_mangle]
-pub extern "C" fn builtin_printledx_f(index: usize, list: *mut List) {
-    let mut list = unsafe { Rc::from_raw(list) };
-    let list = unsafe { Rc::get_mut_unchecked(&mut list) };
-    let mut row = 0b0000_0000;
-    let selector = 0b1000_0000;
-
-    for i in 0..list.len() {
-        if list[i] {
-            row |= selector >> i;
-        } else {
-            row &= !(selector >> i)
-        }
-    }
-    crate::sys::print_ledx_f(index, row);
+pub extern "C" fn builtin_blink_mil(col: isize, row: isize, millis: isize, cond: bool) {
+    blink(col, row, milliseconds(millis), cond);
 }
 
 #[no_mangle]
-pub extern "C" fn builtin_printledx_c(index: usize, list: *mut List) {
-    let mut list = unsafe { Rc::from_raw(list) };
-    let list = unsafe { Rc::get_mut_unchecked(&mut list) };
-    let mut col = 0b0000_0000;
-    let selector = 0b1000_0000;
+pub extern "C" fn builtin_blink_seg(col: isize, row: isize, secs: isize, cond: bool) {
+    blink(col, row, seconds(secs), cond);
+}
 
-    for i in 0..list.len() {
-        if list[i] {
-            col |= selector >> i;
-        } else {
-            col &= !(selector >> i)
+#[no_mangle]
+pub extern "C" fn builtin_blink_min(col: isize, row: isize, mins: isize, cond: bool) {
+    blink(col, row, minutes(mins), cond);
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_printled(col: isize, row: isize, value: bool) {
+    sys::with_display(|display| {
+        display[(row, col)].set(State::from_bool(value));
+    });
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_printledx_f(row: isize, list: *mut List) {
+    let list = unsafe { Rc::from_raw(list) };
+
+    sys::with_display(|display| {
+        for (col, value) in list_bits(&list) {
+            display[(row, col)].set(State::from_bool(value));
         }
-    }
-    crate::sys::print_ledx_c(index, col);
+    });
+
+    Rc::into_raw(list);
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_printledx_c(col: isize, list: *mut List) {
+    let list = unsafe { Rc::from_raw(list) };
+
+    sys::with_display(|display| {
+        for (row, value) in list_bits(&list) {
+            display[(row, col)].set(State::from_bool(value));
+        }
+    });
+
+    Rc::into_raw(list);
 }
 
 #[no_mangle]
 pub extern "C" fn builtin_printledx_m(index: isize, mat: *mut Mat) {
-    if index != 0 {panic!("function printledx only accepts 0 index for matrices")}
-    let mut mat = unsafe { Rc::from_raw(mat) };
-    let  mat = unsafe { Rc::get_mut_unchecked(&mut mat) };
-    let mut result_mat:Vec<usize> =  Vec::new();
-    let selector = 0b1000_0000;
-    for i in 0..mat.len() {
-        let mut rowdata: usize = 0;
-        for j in 0..mat[i].len() {
-            if mat[i][j] {
-                rowdata |= selector >> j;
-            } else {
-                rowdata &= !(selector >> j);
-            }
+    assert!(
+        index == 0,
+        "PrintLedX(\"M\", index, ...) requires index 0, found {}",
+        index
+    );
+
+    let mat = unsafe { Rc::from_raw(mat) };
+    sys::with_display(|display| {
+        for (row, col, value) in mat_bits(&mat) {
+            display[(row, col)].set(State::from_bool(value));
         }
-        result_mat.push(rowdata);
+    });
+
+    Rc::into_raw(mat);
+}
+
+fn blink(col: isize, row: isize, duration: Duration, cond: bool) {
+    let allowed = 0..8;
+    if allowed.contains(&col) && allowed.contains(&row) {
+        let ticks = if cond {
+            Ticks::from_duration(duration)
+        } else {
+            Ticks::default()
+        };
+
+        sys::with_display(|display| {
+            display[(row, col)].blink(ticks);
+        });
     }
-    for i in 0..result_mat.len(){
-        crate::sys::print_ledx_f(i, result_mat[i]);
-    }
+}
+
+fn milliseconds(millis: isize) -> Duration {
+    Duration::from_millis(millis.try_into().unwrap_or_default())
+}
+
+fn seconds(secs: isize) -> Duration {
+    Duration::from_secs(secs.try_into().unwrap_or_default())
+}
+
+fn minutes(mins: isize) -> Duration {
+    let mins: u64 = mins.try_into().unwrap_or_default();
+    Duration::from_secs(mins * 60)
+}
+
+fn list_bits(list: &[bool]) -> impl '_ + Iterator<Item = (isize, bool)> {
+    list.iter()
+        .copied()
+        .chain(iter::repeat(false))
+        .enumerate()
+        .map(|(i, value)| (i as isize, value))
+        .take(8)
+}
+
+fn mat_bits(mat: &[List]) -> impl '_ + Iterator<Item = (isize, isize, bool)> {
+    const EMPTY_ROW: &'static [bool] = &[false; 8];
+    mat.iter()
+        .map(Vec::as_slice)
+        .chain(iter::repeat(EMPTY_ROW))
+        .enumerate()
+        .map(|(row, row_bits)| list_bits(row_bits).map(move |(col, bit)| (row as isize, col, bit)))
+        .flatten()
+        .take(8)
 }

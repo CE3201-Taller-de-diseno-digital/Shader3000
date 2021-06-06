@@ -35,14 +35,26 @@
 //! prueba. Ello requiere definir `#[no_mangle] extern "C" fn user_main() {}`
 //! e invocar a [`handover()`].
 
-#![cfg_attr(target_arch = "xtensa", no_std, feature(default_alloc_error_handler))]
-#![feature(get_mut_unchecked)]
-pub mod builtin;
+#![cfg_attr(
+    target_arch = "xtensa",
+    no_std,
+    feature(default_alloc_error_handler, get_mut_unchecked)
+)]
+
+extern crate alloc;
+
+#[cfg(target_arch = "xtensa")]
+extern crate compiler_builtins;
+
+#[cfg(target_arch = "xtensa")]
+extern crate xtensa_lx_rt;
 
 #[cfg(target_family = "unix")]
+#[macro_use]
 mod hosted;
 
 #[cfg(target_arch = "xtensa")]
+#[macro_use]
 mod esp8266;
 
 #[cfg(target_family = "unix")]
@@ -50,6 +62,11 @@ use crate::hosted as sys;
 
 #[cfg(target_arch = "xtensa")]
 use crate::esp8266 as sys;
+
+pub mod builtin;
+
+mod chrono;
+mod matrix;
 
 /// Transfiere control al programa.
 ///
