@@ -5,6 +5,10 @@ use core::ops::{Index, IndexMut, Not};
 pub struct Display([[Light; 8]; 8]);
 
 impl Display {
+    pub fn rows(&self) -> &[[Light; 8]; 8] {
+        &self.0
+    }
+
     pub fn row_bits(&self, row: usize) -> u8 {
         self.0[row]
             .iter()
