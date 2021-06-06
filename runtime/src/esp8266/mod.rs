@@ -96,7 +96,9 @@ impl Hw {
     const DRAW_TICKS: Ticks = Ticks::from_duration(Duration::from_millis(3));
 
     fn tick(&mut self) {
+        self.states.tick();
         self.timeout.countdown();
+
         if self.draw_clock.cycle_each(Self::DRAW_TICKS) {
             self.draw();
         }

@@ -1,5 +1,5 @@
 use crate::chrono::Ticks;
-use core::ops::{Index, IndexMut};
+use core::ops::{Index, IndexMut, Not};
 
 #[derive(Default)]
 pub struct Display([[Light; 8]; 8]);
@@ -9,6 +9,16 @@ impl Display {
         self.0[row]
             .iter()
             .fold(0, |acc, light| acc << 1 | (light.state == State::On) as u8)
+    }
+
+    pub fn tick(&mut self) {
+        for row in self.0.iter_mut() {
+            for light in row.iter_mut() {
+                if light.clock.cycle_each(light.interval) {
+                    light.state = !light.state;
+                }
+            }
+        }
     }
 }
 
@@ -36,6 +46,10 @@ pub struct Light {
 }
 
 impl Light {
+    pub fn state(&self) -> State {
+        self.state
+    }
+
     pub fn set(&mut self, state: State) {
         self.state = state;
     }
@@ -65,6 +79,17 @@ impl State {
 impl Default for State {
     fn default() -> Self {
         State::Off
+    }
+}
+
+impl Not for State {
+    type Output = State;
+
+    fn not(self) -> Self::Output {
+        match self {
+            State::On => State::Off,
+            State::Off => State::On,
+        }
     }
 }
 
