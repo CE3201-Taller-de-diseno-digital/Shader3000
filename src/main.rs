@@ -113,12 +113,36 @@ fn test_program() -> Program {
         body: FunctionBody::External,
     });
 
+    let builtin_print_led = Rc::new(Function {
+        name: String::from("builtin_printled"),
+        parameters: 3,
+        body: FunctionBody::External,
+    });
+
+    let builtin_blink_mil = Rc::new(Function {
+        name: String::from("builtin_blink_mil"),
+        parameters: 4,
+        body: FunctionBody::External,
+    });
+
     let user_main = Rc::new(Function {
         name: String::from("user_main"),
         parameters: 0,
         body: FunctionBody::Generated(vec![
             Instruction::LoadConst(0, Local(0)),
+            Instruction::LoadConst(500, Local(1)),
+            Instruction::LoadConst(1, Local(2)),
+            Instruction::Call {
+                target: Rc::clone(&builtin_blink_mil),
+                arguments: vec![Local(0), Local(0), Local(1), Local(2)],
+                output: None,
+            },
             Instruction::SetLabel(Label(0)),
+            Instruction::Call {
+                target: Rc::clone(&builtin_print_led),
+                arguments: vec![Local(0), Local(0), Local(2)],
+                output: None,
+            },
             Instruction::Call {
                 target: Rc::clone(&builtin_inc),
                 arguments: vec![Local(0)],
