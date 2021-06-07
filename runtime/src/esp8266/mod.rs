@@ -112,8 +112,7 @@ impl Hw {
         shift(col_data, &mut self.col_clockpin, &mut self.col_datapin);
 
         self.current_state += 1;
-        //cambiar a 8 cuando ya no tenga que probar con un solo registro
-        if self.current_state == 2 {
+        if self.current_state == 8 {
             self.current_state = 0;
         }
     }
@@ -196,15 +195,11 @@ fn main() -> ! {
         hw.d7.set_low().unwrap();
     });
 
-    loop {
-        delay(Duration::from_secs(1));
-    }
-
-    //crate::handover();
+    crate::handover();
 
     // Aquí no hay un sistema operativo que se encargue de hacer algo
     // cuando un progrma finaliza, por lo cual eso no puede pasar
-    //panic!("user_main() returned")
+    panic!("user_main() returned")
 }
 
 fn shift<Clock, Data>(data: usize, clock_pin: &mut Clock, data_pin: &mut Data)
