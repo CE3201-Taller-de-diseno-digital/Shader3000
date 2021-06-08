@@ -48,9 +48,11 @@ Adicionalmente, valiéndonos del conocimiento en el primer segmento, se expondr�
 
 Finalmente se procederá a describir un ejemplo conceptual completo para reforzar los conceptos y crear una mayor cercanía con los temas, principalmente, de la primera sección de la investigación(?).
 
-# Generación de código y diseño de lenguaje
+# Generación de código
 
-# Generación de código en tiempo de ejecución
+## Generación de código y diseño de lenguaje
+
+## Generación de código en tiempo de ejecución
 
 El artículo cubre la técnica de _Generación de código en tiempo de ejecución_ o RTCG por sus siglas en inglés. La última es una técnica de procesamiento de código que permite la generación dinámica de código compilado durante el tiempo de ejecución mismo.
 
@@ -71,7 +73,61 @@ Para comprender mejor el árticulo es escencial notar en especial algunos compon
 
 
 
-## Ejemplos (?)
+## Ejemplo
+Para ilustrar el proceso de generación de código se analizará un ejemplo sencillo presentando el significado del código traducido así como su origen y el proceso que lo genera.
+Analicemos el siguiente código:
+Código fuente: 
+```
+i = 0
+while i < 10:
+    putc(65 + i)
+    i = i + 1
+```
+Código generado:
+``` 
+loop:
+        pushq   $0              # allocate stack space for "i"
+        pushq   %rbp            # save and setup frame pointer
+        movq    %rsp, %rbp
+        movq    $0, 8(%rbp)     # i = 0
+loop_1_while:
+        movq    $10, %rdx       # rax = 1 if i < 10 else 0
+        movq    8(%rbp), %rax
+        cmpq    %rdx, %rax
+        movq    $0, %rax
+        jnl     loop_3_less
+        incq    %rax
+loop_3_less:
+        cmpq    $0, %rax           # if bool is zero, break
+        jz      loop_2_break        
+        movq    8(%rbp), %rdx      # 65 + i
+        movq    $65, %rax          
+        addq    %rdx, %rax         
+        movq    %rax, %rdi         
+        movq    stdout(%rip), %rsi # putc()
+        call    putc               
+        movq    $1, %rdx           # i = i + 1
+        movq    8(%rbp), %rax      
+        addq    %rdx, %rax          
+        movq    %rax, 8(%rbp)      
+        jmp     loop_1_while        
+loop_2_break:
+        popq    %rbp               # restore frame pointer
+        leaq    8(%rsp),%rsp       # deallocate stack space for "i"
+        ret                        # return to caller
+```
+Analicemos el primer fragmeto:
+[fig 1]
+`i = 0` es una declaración, por lo que para generar el código en x86 se utiliza el procedimiento anteriormente especificado para la generacion de declaraciones. Es especificamente las dos primeras lineas `pushq` crean un espacio para i y un puntero. Las siguiente dos, `movq`, asignan los valores a ambas variables.
+
+[fig 2]
+`while i < 10:` es un “statement” que genera un loop, para generar el código se utilizan los procedimientos descritos en “Generación de estructuras”. Para este caso únicamente la declaración del while y su condición generan el código de la fig 2. Las primeras 3 líneas se utilizan para evaluar la condición.
+`cmpq` y no activa un flag si i < 10, de lo contrario si lo activa. `jnl` es un salto condicional (Salto si no es menos). Si el flag está activo salta directamente a `loop_3_less`, tal como se aprecia en la figura 5. Si no, primero pasa por `incq` que incrementa el valor de rax en 1,que gracias a `movq $0 , %rax` era cero, por lo que ahora es 1. 
+
+[fig 3]
+Para este caso nos encontramos dentro del ciclo, y tenemos “statements” adicionales, el código generado contempla que se está dentro de un ciclo y además genera el código de cada statement. Primero se evalúa si  rax es 0. Si es cierto el flag zero se activa. En la siguiente línea `jz` es un salto condicional que se ejecuta si el flag zero está activo. De ser así se salta a break (ver fig 5). Comenzado con la expresión interna de putc las siguientes 4 líneas se encargan de generar el valor de 65 + i. Las siguientes dos hacen el llamado a la función `putc`. Y el resto, menos `jmp` que realiza el salto de nuevo a loop para crear el ciclo, son el producto de `i = i + 1`. Vale la pena analizar que esas 4 instrucciones podrían ser sintetizadas en `addq $1, 8(%rbp)` o inclusive `incq 8(%rbp)` por lo que este código puede ser optimizado, un resultado como esos sería un producto de una sintaxis como `i++`, pero como la statement es distinto el compilador “toma el camino largo”. Finalmente el último segmento simplemente desaloja las variables y retorna a la función que lo llamó.
+
+[fig 4]
 
 # Conclusiones generales
 
