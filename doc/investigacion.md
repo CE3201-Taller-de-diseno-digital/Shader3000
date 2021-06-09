@@ -18,7 +18,7 @@ geometry: margin=1in
 fontsize: 12pt
 fontfamily: sans
 linestretch: 1.15
-bibliography: doc/investigacion.bib
+bibliography: investigacion.bib
 csl: /home/josfemova/UsefulRepos/styles/ieee.csl
 nocite: |
   @crcc, @icld
@@ -82,27 +82,8 @@ Para las declaraciones de variables locales se asume que el espacio fue reservad
 
 Para generar declaración de funciones se debe emitir una etiqueta con el nombre de la función seguido por el prólogo de la función que debe tomar la cantidad de parámetros y funciones locales, y crear el espacio respectivo en la pila. Luego debe tener el cuerpo de la función seguido por su epílogo, que debe contener una etiqueta única para que las expresiones de retorno puedan hacer un salto fácilmente.
 
-## Generación de código en tiempo de ejecución
+### Ejemplo de generación de código
 
-El artículo cubre la técnica de _Generación de código en tiempo de ejecución_ o RTCG por sus siglas en inglés. La última es una técnica de procesamiento de código que permite la generación dinámica de código compilado durante el tiempo de ejecución mismo.
-
-La técnica de compilado en tiempo de ejecución debe hacer un balance entre dos factores fundamentales: tiempo de compilación y optimización de código.
-
-El artículo cubre este tema usando como ejemplo un lenguaje desarrollado por los autores llamado Cyclone, el cual es estáticamente tipado. Este lenguaje se transpila a una variante tipada de lenguaje ensamblador. Se menciona que durante el proceso de transpilado, anteriormente, para el código que era generado en tiempo de ejecución no tendría optimización alguna, lo que aumentaría el costo en recursos computacionales, y podría contrarrestar la ventaja de la generación de código de forma dinámica.
-
-Se mencionan varios acercamientos para poder conseguir generación de código en tiempo de ejecución, entre ellas un modelo basado en templates sin optimizaciones, otro con manipulación de strings que son posteriormente compilados en tiempo de ejecución por un compilador convencional por lo tanto asegurando una optimización de código adecuada. Los autores deciden utilizar un tercer acercamiento, el cual consiste en analizar el flujo de datos de las funciones de generación de código de forma que se pueda obtener un grafo que caracteriza de forma general los posibles productos de la función generadora, esto permite realizar optimizaciones sobre los elementos de la función producto.
-
-Para guiar en el tema, los autores introducen su lenguaje Mini-Cyclone, la variante experimental del lenguaje cyclone que se mencionó anteriormente. Este lenguaje no se compila directamente a lenguaje máquina, sino que su compilado es a un lenguaje intermedio que los autores llaman CIR (Cyclone Intermediate Representation). Este lenguaje mencionan es relativamnete estándar, un IR de bajo nivel y basado en bloques.
-
-Para comprender mejor el árticulo es escencial notar en especial algunos componentes del lenguaje que son fundamentales:
-
-- `codegen` Es la principal expresión generadora de funciones de manera dinámica, es decir, la expresión se utiliza para crear las funcinoes generadoras de código dentro del programa. En mini-Cyclone, esta expresión genera la función y retorna un puntero a la misma.
-- `fill` Es una expresión que permite evaluar expresiones dentro de una sección de `codegen` a partir de parámetros pasados anteriormente a codegen, es decir, aquello que englobe fill será evaluado antes de la generación de código de la función producto.
-- `cut` Es una sentencia que se utiliza para remover las partes de código utilizadas para generación que no son necesarias en la instancia generada.
-- `splice` Sentencia que permite conservar una sección de código de la función generadora dentro de la función generada, dado que la sección de código a conservar se encuentre envuelta dentro de un cut.
-
-
-## Ejemplo
 Para ilustrar el proceso de generación de código se analizará un ejemplo sencillo presentando el significado del código traducido así como su origen y el proceso que lo genera.
 Analicemos el siguiente código:
 Código fuente: 
@@ -168,6 +149,36 @@ Para este caso nos encontramos dentro del ciclo, y tenemos las expresiones inter
 ![](imgs/fig4.png)
 
 **Figura 4**
+
+## Generación de código en tiempo de ejecución
+
+El artículo cubre la técnica de _Generación de código en tiempo de ejecución_ o RTCG por sus siglas en inglés. La última es una técnica de procesamiento de código que permite la generación dinámica de código compilado durante el tiempo de ejecución mismo.
+
+La técnica de compilado en tiempo de ejecución debe hacer un balance entre dos factores fundamentales: tiempo de compilación y optimización de código.
+
+El artículo cubre este tema usando como ejemplo un lenguaje desarrollado por los autores llamado Cyclone, el cual es estáticamente tipado. Este lenguaje se transpila a una variante tipada de lenguaje ensamblador. Se menciona que durante el proceso de transpilado, anteriormente, para el código que era generado en tiempo de ejecución no tendría optimización alguna, lo que aumentaría el costo en recursos computacionales, y podría contrarrestar la ventaja de la generación de código de forma dinámica.
+
+Se mencionan varios acercamientos para poder conseguir generación de código en tiempo de ejecución, entre ellas un modelo basado en templates sin optimizaciones, otro con manipulación de strings que son posteriormente compilados en tiempo de ejecución por un compilador convencional por lo tanto asegurando una optimización de código adecuada. Los autores deciden utilizar un tercer acercamiento, el cual consiste en analizar el flujo de datos de las funciones de generación de código de forma que se pueda obtener un grafo que caracteriza de forma general los posibles productos de la función generadora, esto permite realizar optimizaciones sobre los elementos de la función producto.
+
+Para guiar en el tema, los autores introducen su lenguaje Mini-Cyclone, la variante experimental del lenguaje cyclone que se mencionó anteriormente. Este lenguaje no se compila directamente a lenguaje máquina, sino que su compilado es a un lenguaje intermedio que los autores llaman CIR (Cyclone Intermediate Representation). Este lenguaje mencionan es relativamnete estándar, un IR de bajo nivel y basado en bloques.
+
+Para comprender mejor el árticulo es escencial notar en especial algunos componentes del lenguaje que son fundamentales:
+
+- `codegen` Es la principal expresión generadora de funciones de manera dinámica, es decir, la expresión se utiliza para crear las funcinoes generadoras de código dentro del programa. En mini-Cyclone, esta expresión genera la función y retorna un puntero a la misma.
+- `fill` Es una expresión que permite evaluar expresiones dentro de una sección de `codegen` a partir de parámetros pasados anteriormente a codegen, es decir, aquello que englobe fill será evaluado antes de la generación de código de la función producto.
+- `cut` Es una sentencia que se utiliza para remover las partes de código utilizadas para generación que no son necesarias en la instancia generada.
+- `splice` Sentencia que permite conservar una sección de código de la función generadora dentro de la función generada, dado que la sección de código a conservar se encuentre envuelta dentro de un cut.
+
+### Metodología de traducción general
+
+### Traducción de constructos que participan en la generación de código
+
+### Optimización y uso de CFG
+
+#### Etapa de análisis
+
+#### Etapa de transformación
+
 
 # Conclusiones generales
 
