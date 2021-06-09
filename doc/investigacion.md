@@ -121,8 +121,7 @@ Analicemos el primer fragmeto:
 `i = 0` es una declaración, por lo que para generar el código en x86 se utiliza el procedimiento anteriormente especificado para la generacion de declaraciones. Es especificamente las dos primeras lineas `pushq` crean un espacio para i y un puntero. Las siguiente dos, `movq`, asignan los valores a ambas variables.
 
 [fig 2]
-`while i < 10:` es un “statement” que genera un loop, para generar el código se utilizan los procedimientos descritos en “Generación de estructuras”. Para este caso únicamente la declaración del while y su condición generan el código de la fig 2. Las primeras 3 líneas se utilizan para evaluar la condición.
-`cmpq` y no activa un flag si i < 10, de lo contrario si lo activa. `jnl` es un salto condicional (Salto si no es menos). Si el flag está activo salta directamente a `loop_3_less`, tal como se aprecia en la figura 5. Si no, primero pasa por `incq` que incrementa el valor de rax en 1,que gracias a `movq $0 , %rax` era cero, por lo que ahora es 1. 
+`while i < 10:` es una estructura que genera un loop, para generar el código se utilizan los procedimientos descritos en “Generación de estructuras”. Para este caso únicamente se analiza la declaración del while y su condición generan el código de la fig 2. Las primeras 3 líneas se utilizan para evaluar la condición. `cmpq` activa un flag si i < 10, de lo contrario si lo activa. `jnl` es un salto condicional (Salto si no es menos). Si el flag está activo salta directamente a `loop_3_less`, tal como se aprecia en la figura 5. Si no, primero pasa por `incq` que incrementa el valor de rax en 1,que gracias a `movq $0 , %rax` era cero, por lo que ahora es 1. 
 
 [fig 3]
 Para este caso nos encontramos dentro del ciclo, y tenemos “statements” adicionales, el código generado contempla que se está dentro de un ciclo y además genera el código de cada statement. Primero se evalúa si  rax es 0. Si es cierto el flag zero se activa. En la siguiente línea `jz` es un salto condicional que se ejecuta si el flag zero está activo. De ser así se salta a break (ver fig 5). Comenzado con la expresión interna de putc las siguientes 4 líneas se encargan de generar el valor de 65 + i. Las siguientes dos hacen el llamado a la función `putc`. Y el resto, menos `jmp` que realiza el salto de nuevo a loop para crear el ciclo, son el producto de `i = i + 1`. Vale la pena analizar que esas 4 instrucciones podrían ser sintetizadas en `addq $1, 8(%rbp)` o inclusive `incq 8(%rbp)` por lo que este código puede ser optimizado, un resultado como esos sería un producto de una sintaxis como `i++`, pero como la statement es distinto el compilador “toma el camino largo”. Finalmente el último segmento simplemente desaloja las variables y retorna a la función que lo llamó.
@@ -132,6 +131,12 @@ Para este caso nos encontramos dentro del ciclo, y tenemos “statements” adic
 # Conclusiones generales
 
 # Conclusiones específicas
+
+- Antes de poder generar expresiones, hace falta ser capaces de alojar, nombrar y liberar registros en el procesador. 
+- Es posible generar código para expresiones si estas son representadas como estructuras AST o DAG y recorridas en postorden.
+- Dependiendo de la forma en que se realice la generación de código una etapa de optimización después es fundamental para asegurar la eficiencia.
+- Es posible implementar estructuras complejas como condicionales y ciclos utilizando únicamente saltos condicionados entre distintos fragmentos de código secuencial en ensamblador.
+
 
 # Bibliografía
 
