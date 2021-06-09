@@ -228,7 +228,7 @@ where
     }
 }
 
-#[interrupt(TIMER1)]
+#[interrupt]
 #[ram]
 fn timer1() {
     hw(Hw::tick);
