@@ -93,6 +93,52 @@ impl Sink for TypeCheck {
     fn free_local(&mut self, _local: Local) {}
 }
 
+struct Listing {
+    body: Vec<Instruction>,
+    free_locals: Vec<Local>,
+    next_local: Local,
+}
+
+impl Listing {
+    fn for_parameters(parameters: u32) -> Self {
+        Listing {
+            body: Vec::new(),
+            free_locals: Vec::new(),
+            next_local: Local(parameters),
+        }
+    }
+}
+
+impl Sink for Listing {
+    fn push(&mut self, instruction: Instruction) {
+        self.body.push(instruction);
+    }
+
+    fn alloc_local(&mut self) -> Local {
+        if let Some(local) = self.free_locals.pop() {
+            local
+        } else {
+            let Local(next_local) = self.next_local;
+            self.next_local = Local(next_local + 1);
+
+            Local(next_local)
+        }
+    }
+
+    fn free_local(&mut self, local: Local) {
+        debug_assert!(
+            local.0 < self.next_local.0
+                && self
+                    .free_locals
+                    .iter()
+                    .find(|&&other| other == local)
+                    .is_none()
+        );
+
+        self.free_locals.push(local);
+    }
+}
+
 pub type Semantic<T> = Result<T, Located<SemanticError>>;
 
 #[non_exhaustive]
@@ -126,14 +172,29 @@ pub enum SemanticError {
 impl parse::Ast {
     pub fn resolve(self) -> Semantic<ir::Program> {
         let mut global_scope = self.scan_global_scope()?;
-        let mut context = Context {
+        let context = Context {
             scope: &mut global_scope,
             sink: &mut TypeCheck,
         };
 
         let code = self
             .iter()
-            .map(|procedure| context.scan_proc(procedure))
+            .map(|procedure| {
+                let parameters = procedure.parameters().len() as u32;
+
+                let mut listing = Listing::for_parameters(parameters);
+                let mut context = Context {
+                    scope: &mut global_scope,
+                    sink: &mut listing,
+                };
+
+                let symbol = context.scan_procedure(procedure)?;
+                Ok(ir::GeneratedFunction {
+                    name: symbol,
+                    body: listing.body,
+                    parameters,
+                })
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
         let globals = global_scope
@@ -231,18 +292,13 @@ struct Context<'b, 'a: 'b, S: Sink> {
 }
 
 impl<S: Sink> Context<'_, 'static, S> {
-    fn scan_proc(&mut self, procedure: &parse::Procedure) -> Semantic<ir::GeneratedFunction> {
+    fn scan_procedure(&mut self, procedure: &parse::Procedure) -> Semantic<Rc<String>> {
         let types = self.parameter_types(procedure)?;
-        let symbol = match self.scope.symbols.get(procedure.name().as_ref()) {
-            Some(Named::Procs { variants }) => variants.get(&types).unwrap().clone(),
-            _ => unreachable!(),
-        };
 
-        Ok(ir::GeneratedFunction {
-            name: symbol,
-            body: Vec::new(),
-            parameters: procedure.parameters().len() as u32,
-        })
+        match self.scope.symbols.get(procedure.name().as_ref()) {
+            Some(Named::Procs { variants }) => Ok(variants.get(&types).unwrap().clone()),
+            _ => unreachable!(),
+        }
     }
 
     fn parameter_types(&mut self, procedure: &parse::Procedure) -> Semantic<Vec<Type>> {
