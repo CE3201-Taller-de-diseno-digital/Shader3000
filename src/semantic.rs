@@ -73,32 +73,24 @@ enum Ownership {
     Borrowed,
 }
 
-trait Sink<'a> {
-    fn symbols(&self) -> &SymbolTable<'a>;
-
+trait Sink {
     fn push(&mut self, instruction: Instruction);
 
-    fn ephemeral<F, R>(&mut self, callback: F) -> Semantic<R>
-    where
-        F: FnOnce(&mut Self, Local) -> Semantic<(Type, Ownership, R)>;
+    fn alloc_local(&mut self) -> Local;
+
+    fn free_local(&mut self, local: Local);
 }
 
-struct TypeCheck<'a>(&'a mut SymbolTable<'static>);
+struct TypeCheck;
 
-impl Sink<'static> for TypeCheck<'_> {
-    fn symbols(&self) -> &SymbolTable<'static> {
-        &self.0
-    }
-
+impl Sink for TypeCheck {
     fn push(&mut self, _instruction: Instruction) {}
 
-    fn ephemeral<F, R>(&mut self, callback: F) -> Semantic<R>
-    where
-        F: FnOnce(&mut Self, Local) -> Semantic<(Type, Ownership, R)>,
-    {
-        let (_, _, result) = callback(self, Local(42))?;
-        Ok(result)
+    fn alloc_local(&mut self) -> Local {
+        Local(42)
     }
+
+    fn free_local(&mut self, _local: Local) {}
 }
 
 pub type Semantic<T> = Result<T, Located<SemanticError>>;
@@ -133,11 +125,15 @@ pub enum SemanticError {
 
 impl parse::Ast {
     pub fn resolve(self) -> Semantic<ir::Program> {
-        let mut global_scope = scan_global_scope(&self)?;
+        let mut global_scope = self.scan_global_scope()?;
+        let mut context = Context {
+            scope: &mut global_scope,
+            sink: &mut TypeCheck,
+        };
 
         let code = self
             .iter()
-            .map(|procedure| scan_procedure(procedure, &mut global_scope))
+            .map(|procedure| context.scan_proc(procedure))
             .collect::<Result<Vec<_>, _>>()?;
 
         let globals = global_scope
@@ -155,86 +151,231 @@ impl parse::Ast {
 
         Ok(ir::Program { code, globals })
     }
-}
 
-fn scan_global_scope(ast: &parse::Ast) -> Semantic<SymbolTable<'static>> {
-    let main = ast
-        .iter()
-        .find(|proc| {
-            let id = proc.name().as_ref();
-            unicase::eq_ascii(id.as_ref(), "main") && proc.parameters().is_empty()
-        })
-        .ok_or_else(|| Located::at(SemanticError::NoMain, ast.eof().clone()))?;
+    fn scan_global_scope(&self) -> Semantic<SymbolTable<'static>> {
+        let main = self
+            .iter()
+            .find(|proc| {
+                let id = proc.name().as_ref();
+                unicase::eq_ascii(id.as_ref(), "main") && proc.parameters().is_empty()
+            })
+            .ok_or_else(|| Located::at(SemanticError::NoMain, self.eof().clone()))?;
 
-    let mut globals = SymbolTable {
-        outer: None,
-        symbols: HashMap::new(),
-    };
+        let mut globals = SymbolTable {
+            outer: None,
+            symbols: HashMap::new(),
+        };
 
-    let mut statements = main.statements().iter();
-    while let Some(parse::Statement::Assignment { targets, values }) = statements.next() {
-        for (target, value) in break_assignment(targets, values)? {
-            // Inicialmente solo se consideran definiciones y no asignaciones
-            let id = target.var().as_ref();
-            if globals.symbols.get(id).is_none() && target.indices().is_empty() {
-                // Esto solo verifica e infiere tipos, todavía no se genera IR
-                let (typ, _) = eval(value, Local(42), &mut TypeCheck(&mut globals))?;
+        let mut context = Context {
+            scope: &mut globals,
+            sink: &mut TypeCheck,
+        };
 
-                let var = Variable {
-                    access: Access::Global(Global::from(mangle(id, &[]))),
-                    typ,
-                };
+        let mut statements = main.statements().iter();
+        while let Some(parse::Statement::Assignment { targets, values }) = statements.next() {
+            for (target, value) in break_assignment(targets, values)? {
+                // Inicialmente solo se consideran definiciones y no asignaciones
+                let id = target.var().as_ref();
+                if context.scope.symbols.get(id).is_none() && target.indices().is_empty() {
+                    // Esto solo verifica e infiere tipos, todavía no se genera IR
+                    let (typ, _) = context.eval(value, Local(42))?;
 
-                globals.symbols.insert(id.clone(), Named::Var(var));
-            }
-        }
-    }
+                    let var = Variable {
+                        access: Access::Global(Global::from(mangle(id, &[]))),
+                        typ,
+                    };
 
-    for procedure in ast.iter() {
-        let types = parameter_types(procedure, &mut globals)?;
-
-        let (location, name) = procedure.name().clone().split();
-        let named = globals.symbols.entry(name).or_insert_with(|| Named::Procs {
-            variants: HashMap::new(),
-        });
-
-        let id = procedure.name().as_ref();
-        let symbol = Rc::new(mangle(id, &types));
-
-        match named {
-            Named::Var(_) => {
-                return Err(Located::at(SemanticError::NameClash(id.clone()), location))
-            }
-
-            Named::Procs { variants } => {
-                if variants.insert(types, symbol).is_some() {
-                    return Err(Located::at(
-                        SemanticError::SignatureClash(id.clone()),
-                        location,
-                    ));
+                    context.scope.symbols.insert(id.clone(), Named::Var(var));
                 }
             }
         }
-    }
 
-    Ok(globals)
+        for procedure in self.iter() {
+            let types = context.parameter_types(procedure)?;
+
+            let (location, name) = procedure.name().clone().split();
+            let named = context
+                .scope
+                .symbols
+                .entry(name)
+                .or_insert_with(|| Named::Procs {
+                    variants: HashMap::new(),
+                });
+
+            let id = procedure.name().as_ref();
+            let symbol = Rc::new(mangle(id, &types));
+
+            match named {
+                Named::Var(_) => {
+                    return Err(Located::at(SemanticError::NameClash(id.clone()), location))
+                }
+
+                Named::Procs { variants } => {
+                    if variants.insert(types, symbol).is_some() {
+                        return Err(Located::at(
+                            SemanticError::SignatureClash(id.clone()),
+                            location,
+                        ));
+                    }
+                }
+            }
+        }
+
+        Ok(globals)
+    }
 }
 
-fn scan_procedure(
-    procedure: &parse::Procedure,
-    globals: &mut SymbolTable<'static>,
-) -> Semantic<ir::GeneratedFunction> {
-    let types = parameter_types(procedure, globals)?;
-    let symbol = match globals.symbols.get(procedure.name().as_ref()) {
-        Some(Named::Procs { variants }) => variants.get(&types).unwrap().clone(),
-        _ => unreachable!(),
-    };
+struct Context<'b, 'a: 'b, S: Sink> {
+    scope: &'b mut SymbolTable<'a>,
+    sink: &'b mut S,
+}
 
-    Ok(ir::GeneratedFunction {
-        name: symbol,
-        body: Vec::new(),
-        parameters: procedure.parameters().len() as u32,
-    })
+impl<S: Sink> Context<'_, 'static, S> {
+    fn scan_proc(&mut self, procedure: &parse::Procedure) -> Semantic<ir::GeneratedFunction> {
+        let types = self.parameter_types(procedure)?;
+        let symbol = match self.scope.symbols.get(procedure.name().as_ref()) {
+            Some(Named::Procs { variants }) => variants.get(&types).unwrap().clone(),
+            _ => unreachable!(),
+        };
+
+        Ok(ir::GeneratedFunction {
+            name: symbol,
+            body: Vec::new(),
+            parameters: procedure.parameters().len() as u32,
+        })
+    }
+
+    fn parameter_types(&mut self, procedure: &parse::Procedure) -> Semantic<Vec<Type>> {
+        let mut type_check = Context {
+            scope: self.scope,
+            sink: &mut TypeCheck,
+        };
+
+        procedure
+            .parameters()
+            .iter()
+            .map(|param| match param.of().as_ref() {
+                parse::Type::Int => Ok(Type::Int),
+                parse::Type::Bool => Ok(Type::Bool),
+                parse::Type::List => Ok(Type::List),
+                parse::Type::Of(expr) => {
+                    let (typ, _) = type_check.eval(expr, Local(42))?;
+                    Ok(typ)
+                }
+            })
+            .collect()
+    }
+}
+
+impl<S: Sink> Context<'_, '_, S> {
+    fn eval(&mut self, expr: &Located<parse::Expr>, into: Local) -> Semantic<(Type, Ownership)> {
+        use parse::Expr::*;
+        use Ownership::Owned;
+
+        match expr.as_ref() {
+            True => {
+                self.sink.push(Instruction::LoadConst(1, into));
+                Ok((Type::Bool, Owned))
+            }
+
+            False => {
+                self.sink.push(Instruction::LoadConst(0, into));
+                Ok((Type::Bool, Owned))
+            }
+
+            Integer(constant) => {
+                self.sink.push(Instruction::LoadConst(*constant, into));
+                Ok((Type::Int, Owned))
+            }
+
+            Read(target) => self.read(target, into),
+
+            Len(expr) => self.ephemeral(|this, arg| {
+                let (arg_type, arg_ownership) = this.eval(expr, arg)?;
+                let target = match arg_type {
+                    Type::List => Function::External("builtin_len"),
+
+                    _ => {
+                        return Err(Located::at(
+                            SemanticError::ExpectedType(Type::List, arg_type),
+                            expr.location().clone(),
+                        ))
+                    }
+                };
+
+                this.sink.push(Instruction::Call {
+                    target,
+                    arguments: vec![arg],
+                    output: Some(into),
+                });
+
+                Ok((arg_type, arg_ownership, (Type::Int, Owned)))
+            }),
+
+            _ => todo!(),
+        }
+    }
+
+    fn read(&mut self, target: &parse::Target, into: Local) -> Semantic<(Type, Ownership)> {
+        let var = target.var();
+        let var = match self.scope.lookup(var)? {
+            Named::Var(var) => var,
+            Named::Procs { .. } => {
+                return Err(Located::at(
+                    SemanticError::ExpectedVar(var.as_ref().clone()),
+                    var.location().clone(),
+                ))
+            }
+        };
+
+        let var = var.clone();
+
+        match &var.access {
+            Access::Local(local) => self.sink.push(Instruction::Move(*local, into)),
+            Access::Global(global) => self
+                .sink
+                .push(Instruction::LoadGlobal(global.clone(), into)),
+        }
+
+        if !target.indices().is_empty() {
+            todo!()
+        }
+
+        Ok((var.typ, Ownership::Borrowed))
+    }
+
+    fn ephemeral<F, R>(&mut self, callback: F) -> Semantic<R>
+    where
+        F: FnOnce(&mut Self, Local) -> Semantic<(Type, Ownership, R)>,
+        R: 'static,
+    {
+        let local = self.sink.alloc_local();
+
+        let (typ, ownership, result) = callback(self, local)?;
+
+        self.drop(local, typ, ownership);
+        self.sink.free_local(local);
+
+        Ok(result)
+    }
+
+    fn drop(&mut self, local: Local, typ: Type, ownership: Ownership) {
+        let destructor = match (typ, ownership) {
+            (_, Ownership::Borrowed) => None,
+            (Type::Int, _) => None,
+            (Type::Bool, _) => None,
+            (Type::List, Ownership::Owned) => Some("builtin_drop_list"),
+            (Type::Mat, Ownership::Owned) => Some("builtin_drop_mat"),
+        };
+
+        if let Some(destructor) = destructor {
+            self.sink.push(Instruction::Call {
+                target: Function::External(destructor),
+                arguments: vec![local],
+                output: None,
+            });
+        }
+    }
 }
 
 fn break_assignment<'a>(
@@ -253,107 +394,6 @@ fn break_assignment<'a>(
         SemanticError::UnbalancedAssignment,
         error_location.clone(),
     ))
-}
-
-fn eval<'a, S: Sink<'a>>(
-    expr: &Located<parse::Expr>,
-    into: Local,
-    sink: &mut S,
-) -> Semantic<(Type, Ownership)> {
-    use parse::Expr::*;
-    use Ownership::Owned;
-
-    match expr.as_ref() {
-        True => {
-            sink.push(Instruction::LoadConst(1, into));
-            Ok((Type::Bool, Owned))
-        }
-
-        False => {
-            sink.push(Instruction::LoadConst(0, into));
-            Ok((Type::Bool, Owned))
-        }
-
-        Integer(constant) => {
-            sink.push(Instruction::LoadConst(*constant, into));
-            Ok((Type::Int, Owned))
-        }
-
-        Read(target) => read(target, into, sink),
-
-        Len(expr) => sink.ephemeral(|sink, arg| {
-            let (arg_type, arg_ownership) = eval(expr, arg, sink)?;
-            let target = match arg_type {
-                Type::List => Function::External("builtin_len_list"),
-
-                _ => {
-                    return Err(Located::at(
-                        SemanticError::ExpectedType(Type::List, arg_type),
-                        expr.location().clone(),
-                    ))
-                }
-            };
-
-            sink.push(Instruction::Call {
-                target,
-                arguments: vec![arg],
-                output: Some(into),
-            });
-
-            Ok((arg_type, arg_ownership, (Type::Int, Owned)))
-        }),
-
-        _ => todo!(),
-    }
-}
-
-fn read<'a, S: Sink<'a>>(
-    target: &parse::Target,
-    into: Local,
-    sink: &mut S,
-) -> Semantic<(Type, Ownership)> {
-    let var = target.var();
-    let var = match sink.symbols().lookup(var)? {
-        Named::Var(var) => var,
-        Named::Procs { .. } => {
-            return Err(Located::at(
-                SemanticError::ExpectedVar(var.as_ref().clone()),
-                var.location().clone(),
-            ))
-        }
-    };
-
-    let var = var.clone();
-
-    match &var.access {
-        Access::Local(local) => sink.push(Instruction::Move(*local, into)),
-        Access::Global(global) => sink.push(Instruction::LoadGlobal(global.clone(), into)),
-    }
-
-    if !target.indices().is_empty() {
-        todo!()
-    }
-
-    Ok((var.typ, Ownership::Borrowed))
-}
-
-fn parameter_types(
-    procedure: &parse::Procedure,
-    globals: &mut SymbolTable<'static>,
-) -> Semantic<Vec<Type>> {
-    procedure
-        .parameters()
-        .iter()
-        .map(|param| match param.of().as_ref() {
-            parse::Type::Int => Ok(Type::Int),
-            parse::Type::Bool => Ok(Type::Bool),
-            parse::Type::List => Ok(Type::List),
-            parse::Type::Of(expr) => {
-                let (typ, _) = eval(expr, Local(42), &mut TypeCheck(globals))?;
-                Ok(typ)
-            }
-        })
-        .collect()
 }
 
 fn mangle(name: &Identifier, types: &[Type]) -> String {
