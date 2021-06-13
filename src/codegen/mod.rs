@@ -32,8 +32,8 @@ pub fn emit(program: &Program, arch: Arch, output: &mut dyn Write) -> io::Result
         writeln!(output, ".lcomm {}, {}", global.as_ref(), value_size)?;
     }
 
-    // user_main() es un caso especial en lo que respecta a enlazado
-    writeln!(output, ".text\n.global user_main")?;
+    // Inicio de las secciones de código
+    writeln!(output, ".text")?;
 
     // Se emite propiamente cada función no externa
     for function in &program.code {
@@ -107,7 +107,11 @@ fn emit_body<'a, E: Emitter<'a>>(
 
     // Colocar cada función en su propia sección permite eliminar
     // código muerto con -Wl,--gc-sections en la fase de enlazado
-    writeln!(output, ".section .text.{0}\n{0}:", function.name)?;
+    writeln!(
+        output,
+        ".section .text.{0}\n.global {0}\n{0}:",
+        function.name
+    )?;
 
     let context = Context {
         function,
