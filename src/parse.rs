@@ -217,8 +217,8 @@ pub enum ParserError {
     #[error("Expected {0}, no token was found instead")]
     MissingToken(Token),
 
-    #[error("Expected identifier")]
-    ExpectedId,
+    #[error("Expected identifier, found {0}")]
+    ExpectedId(Token),
 
     #[error("Expected any of `if`, `for`, `call`, assignment, method call or built-in call")]
     ExpectedStatement,
@@ -903,7 +903,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
         let (location, token) = self.next()?.split();
         match token {
             Token::Id(id) => Ok(Located::at(id, location)),
-            _ => self.fail(ParserError::ExpectedId),
+            _ => self.fail(ParserError::ExpectedId(token)),
         }
     }
 
