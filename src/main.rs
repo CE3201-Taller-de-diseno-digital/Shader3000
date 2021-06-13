@@ -95,72 +95,48 @@ fn test_program() -> Program {
     // pipeline lexer->parser->magia->ir->asm->link. Debería eliminarse
     // eventualmente.
 
-    let builtin_inc = Rc::new(Function {
-        name: String::from("builtin_inc"),
-        parameters: 1,
-        body: FunctionBody::External,
-    });
+    let builtin_inc = Function::External("builtin_inc");
+    let builtin_delay_seg = Function::External("builtin_delay_seg");
+    let builtin_debug = Function::External("builtin_debug");
+    let builtin_print_led = Function::External("builtin_printled");
+    let builtin_blink_mil = Function::External("builtin_blink_mil");
 
-    let builtin_delay_seg = Rc::new(Function {
-        name: String::from("builtin_delay_seg"),
-        parameters: 1,
-        body: FunctionBody::External,
-    });
-
-    let builtin_debug = Rc::new(Function {
-        name: String::from("builtin_debug"),
-        parameters: 1,
-        body: FunctionBody::External,
-    });
-
-    let builtin_print_led = Rc::new(Function {
-        name: String::from("builtin_printled"),
-        parameters: 3,
-        body: FunctionBody::External,
-    });
-
-    let builtin_blink_mil = Rc::new(Function {
-        name: String::from("builtin_blink_mil"),
-        parameters: 4,
-        body: FunctionBody::External,
-    });
-
-    let user_main = Rc::new(Function {
+    let user_main = Function::Generated(Rc::new(GeneratedFunction {
         name: String::from("user_main"),
         parameters: 0,
-        body: FunctionBody::Generated(vec![
+        body: vec![
             Instruction::LoadConst(0, Local(0)),
             Instruction::LoadConst(500, Local(1)),
             Instruction::LoadConst(1, Local(2)),
             Instruction::Call {
-                target: Rc::clone(&builtin_blink_mil),
+                target: builtin_blink_mil,
                 arguments: vec![Local(0), Local(0), Local(1), Local(2)],
                 output: None,
             },
             Instruction::SetLabel(Label(0)),
             Instruction::Call {
-                target: Rc::clone(&builtin_print_led),
+                target: builtin_print_led,
                 arguments: vec![Local(0), Local(0), Local(2)],
                 output: None,
             },
             Instruction::Call {
-                target: Rc::clone(&builtin_inc),
+                target: builtin_inc,
                 arguments: vec![Local(0)],
                 output: Some(Local(0)),
             },
             Instruction::Call {
-                target: Rc::clone(&builtin_debug),
+                target: builtin_debug,
                 arguments: vec![Local(0)],
                 output: None,
             },
             Instruction::Call {
-                target: Rc::clone(&builtin_delay_seg),
+                target: builtin_delay_seg,
                 arguments: vec![Local(0)],
                 output: None,
             },
             Instruction::Jump(Label(0)),
-        ]),
-    });
+        ],
+    }));
 
     Program {
         globals: vec![],

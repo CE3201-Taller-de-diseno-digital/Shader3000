@@ -6,14 +6,13 @@
 
 use crate::{
     arch::{Arch, Emitter, Register},
-    ir::{Function, FunctionBody, Global, Instruction, Label, Local, Program},
+    ir::{Function, GeneratedFunction, Instruction, Label, Local, Program},
 };
 
 use std::{
     cell::RefCell,
     fmt,
     io::{self, Write},
-    ops::Deref,
 };
 
 pub mod regs;
@@ -30,8 +29,7 @@ pub fn emit(program: &Program, arch: Arch, output: &mut dyn Write) -> io::Result
 
     // Variables globales van en .bss
     for global in &program.globals {
-        let Global(name) = global.deref();
-        writeln!(output, ".lcomm {}, {}", name, value_size)?;
+        writeln!(output, ".lcomm {}, {}", global.as_ref(), value_size)?;
     }
 
     // user_main() es un caso especial en lo que respecta a enlazado
@@ -39,9 +37,9 @@ pub fn emit(program: &Program, arch: Arch, output: &mut dyn Write) -> io::Result
 
     // Se emite propiamente cada función no externa
     for function in &program.code {
-        if let FunctionBody::Generated(instructions) = &function.body {
+        if let Function::Generated(generated) = function {
             dispatch_arch!(Emitter: arch => {
-                emit_body::<Emitter>(output, function, &instructions)?;
+                emit_body::<Emitter>(output, generated)?;
             });
         }
     }
@@ -55,7 +53,7 @@ pub fn emit(program: &Program, arch: Arch, output: &mut dyn Write) -> io::Result
 /// de emisión requieren con frecuencia, como lo son el flujo de salida
 /// y la función IR que está siendo generada.
 pub struct Context<'a, E: Emitter<'a>> {
-    function: &'a Function,
+    function: &'a GeneratedFunction,
     output: RefCell<&'a mut dyn Write>,
     locals: u32,
     frame_info: E::FrameInfo,
@@ -63,7 +61,7 @@ pub struct Context<'a, E: Emitter<'a>> {
 
 impl<'a, E: Emitter<'a>> Context<'a, E> {
     /// Función en forma IR que está siendo generada.
-    pub fn function(&self) -> &Function {
+    pub fn function(&self) -> &GeneratedFunction {
         self.function
     }
 
@@ -99,10 +97,10 @@ impl<'a, E: Emitter<'a>> Context<'a, E> {
 /// La correspondencia IR:ensamblador es siempre 1:N.
 fn emit_body<'a, E: Emitter<'a>>(
     output: &'a mut dyn Write,
-    function: &'a Function,
-    instructions: &[Instruction],
+    function: &'a GeneratedFunction,
 ) -> io::Result<()> {
-    let locals = instructions
+    let locals = function
+        .body
         .iter()
         .map(required_locals)
         .max()
@@ -120,15 +118,25 @@ fn emit_body<'a, E: Emitter<'a>>(
         frame_info: Default::default(),
     };
 
-    let mut emitter = E::new(context, instructions)?;
+    let mut emitter = E::new(context, &function.body)?;
     let mut last_was_unconditional_jump = false;
 
-    for instruction in instructions {
+    for instruction in &function.body {
         use Instruction::*;
 
         last_was_unconditional_jump = false;
 
         match instruction {
+            Move(from, to) => {
+                if *from != *to {
+                    let from = emitter.read(*from)?;
+                    let to = emitter.write(*to)?;
+
+                    let (cx, _) = emitter.cx_regs();
+                    E::reg_to_reg(cx, from, to)?;
+                }
+            }
+
             SetLabel(Label(label)) => {
                 emitter.clear()?;
 
@@ -194,7 +202,7 @@ fn emit_body<'a, E: Emitter<'a>>(
 }
 
 /// Genera el símbolo que corresponde a una etiqueta dentro de una función.
-fn label_symbol(function: &Function, Label(label): Label) -> String {
+fn label_symbol(function: &GeneratedFunction, Label(label): Label) -> String {
     format!(".L{}.{}", function.name, label)
 }
 
@@ -205,6 +213,7 @@ fn required_locals(instruction: &Instruction) -> u32 {
 
     let required = |Local(local)| local + 1;
     match instruction {
+        Move(from, to) => required(*from).max(required(*to)),
         JumpIfFalse(local, _) => required(*local),
         LoadConst(_, local) => required(*local),
         LoadGlobal(_, local) => required(*local),

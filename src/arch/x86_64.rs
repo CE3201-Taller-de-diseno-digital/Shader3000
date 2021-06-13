@@ -172,12 +172,12 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
         }
     }
 
-    fn load_global(&mut self, Global(global): &Global, reg: Reg) -> io::Result<()> {
-        emit!(self.cx, "mov", "{}(%rip), %{}", global, reg)
+    fn load_global(&mut self, global: &Global, reg: Reg) -> io::Result<()> {
+        emit!(self.cx, "mov", "{}(%rip), %{}", global.as_ref(), reg)
     }
 
-    fn store_global(&mut self, reg: Reg, Global(global): &Global) -> io::Result<()> {
-        emit!(self.cx, "mov", "%{}, {}(%rip)", reg, global)
+    fn store_global(&mut self, reg: Reg, global: &Global) -> io::Result<()> {
+        emit!(self.cx, "mov", "%{}, {}(%rip)", reg, global.as_ref())
     }
 
     fn prepare_args(&mut self, arguments: &[Local]) -> io::Result<CallInfo> {
@@ -210,7 +210,7 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
     }
 
     fn call(&mut self, target: &Function, call_info: CallInfo) -> io::Result<()> {
-        emit!(self.cx, "call", "{}", target.name)?;
+        emit!(self.cx, "call", "{}", target.name())?;
 
         // Se reclama memoria que fue usada para argumentos
         if call_info.rsp_offset > 0 {
