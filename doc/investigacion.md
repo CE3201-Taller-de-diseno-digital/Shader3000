@@ -22,6 +22,9 @@ bibliography: investigacion.bib
 csl: /home/josfemova/UsefulRepos/styles/ieee.csl
 nocite: |
   @crcc, @icld
+output:
+  pdf_document:
+    fig_caption: true
 ...
 
 \maketitle
@@ -126,24 +129,21 @@ loop_2_break:
 ```
 
 Considérese la primera sección de este listado, a como muestra la Figura 1.
-![](imgs/fig1.png)
-**Figura 1**
+
+![\label{fig1}](imgs/fig1.png){width=50%}
 
 Las primeras tres instrucciones constituyen el prólogo de la función, y la cuarta es la inicialización de `i`. Nótese que el prólogo reserva memoria para las locales que se utilizarán durante la ejecución de la función y ajusta tanto stack pointer (`%rsp`) como frame pointer (`%rbp`) para formar un nuevo marco de llamada. `i = 0` es una declaración, por lo que para generar el código en x86 se utiliza el procedimiento anteriormente especificado para la generacion de declaraciones e inicializadores. La cuarta instrucción guarda un cero en la posición de memoria que corresponde a `i`. Nótese que un mecanismo de generación de código más óptimo evitaría esta última instrucción, ya que por consecuencia de `pushq $0` ya existe un valor de cero en esa posición.
 
 A continuación se comienza y mantiene un bucle, ver Figura 2.
-![](imgs/fig2.png)
-**Figura 2**
+![\label{fig2}](imgs/fig2.png){width=50%}
 
 Para generar código se utilizan los mismos procedimientos descritos en “Generación de estructuras”. Para este caso, únicamente se analiza la declaración del `while` y su condición. Las primeras tres instrucciones se utilizan para evaluar la condición. `cmpq` resta sus dos operandos (el segundo menos el primero, debido a la inversión de orden de operandos presente en sintaxis AT&T), altera banderas de `RFLAGS` según el resultaod de la resta y luego descarta el resultado de la resta. Estas banderas incluyen tales hechos como que el resultado sea cero o distinto de cero, que la interpretación en complemento a dos del resultado sea positiva o negativa, entre otras. `jnl` ("jump if not less") es un salto condicional que se da si y solo si las banderas adecuadas que resultan tras una operación `cmp b, a` donde `!(a < b)`. En este caso, ello quiere decir que el salto ocurre si y solo si `i >= 10`, la condición opuesta a la condición fuente del bucle. Si la condición de salto no se cumple, `jnl` se comporta igual que `nop` (no realiza ninguna acción). La Figura 3 muestra las consecuencias de un salto a `loop_3_less`. Si no hay salto, primero pasa por una instrucción `incq` que incrementa en 1 el valor de `%rax`, que gracias a `movq $0 , %rax` era cero, por lo que pasaría a ser 1 si y solo si la condición de salto no se cumple (es decir, si la condición del bucle sí se cumple). En otras palabras, al momento de llegar a `loop_3_less` el registro `%rax` contiene un booleano con el resultado de evaluar `i < 10`.
 
-![](imgs/fig3.png)
-**Figura 3**
+![\label{fig3}](imgs/fig3.png){width=50%}
 
 Para este caso nos encontramos dentro del ciclo, y tenemos las expresiones internas del ciclo. El código generado contempla que se está dentro de un ciclo y además genera el código de cada expresión. Primero, se evalúa si `%rax` es 0. Si es cierto entonces `ZF` ("zero flag") se activa en `RFLAGS`. En la siguiente línea `jz` es un salto condicional que se toma si y solo si `ZF` está activa. De ser así, se salta a `loop_2_break` (ver Figura 4). Comenzando con la expresión interna de llamada a `putc`, las siguientes 4 líneas se encargan de generar el valor de `65 + i`. Las siguientes dos hacen el llamado a la función `putc` con posiciones apropiadas de cada argumento. El resto (con excepción de `jmp`, que realiza el salto de nuevo a loop para crear el ciclo), son el producto de la sentencia `i = i + 1`. Vale la pena analizar que esas 4 instrucciones podrían ser sintetizadas en `addq $1, 8(%rbp)` o inclusive `incq 8(%rbp)`, lo que sugiere que este código puede ser optimizado (tal como se mecionaba al comienzo de la investigación). Un resultado como esos sería un producto de una sintaxis como `i++`, pero como la expresión es distinta el compilador “toma el camino largo”.
 
-![](imgs/fig4.png)
-**Figura 4**
+![\label{fig4}](imgs/fig4.png){width=30%}
 
 Finalmente, el último segmento de tres instrucciones es el epílogo, el cual desaloja las variables locales, destruye el marco y retorna a la función que llamó.
 
@@ -191,17 +191,28 @@ La estrategia escogida por los autores es la de optimizar en tiempo de compilaci
 
 Las optimizaciones aplicables sobre IR con huecos son mayormente idénticas a las que se conocen de la teoría clásica para optimización en tiempo de compilación. Los autores mencionan de manera breve que deben considerarse a los huecos como cajas negras, así como consideraciones de cuidado menor al referirse a las mismas (no pueden reducirse, simplificarse o unificarse a lo largo de plantillas distintas, ya que se corre el riesgo de alterar el significado del programa).
 
-# Conclusiones generales
-
 # Conclusiones específicas
+
+## Sobre el artículo de generación de código
 
 - Antes de poder generar expresiones, hace falta ser capaces de alojar, nombrar y liberar registros en el procesador. 
 - Es posible generar código para expresiones si estas son representadas como estructuras AST o DAG y recorridas en postorden.
 - En ocasiones una única expresión puede generar multiples líneas de código ensamblador, esto debido a alojos y desalojos de registros o casos especiales como es el `imul` de x86.
-- Las etapa de optimización antes y alrededor de la generación de código son fundamental para asegurar la eficiencia.
 - Es posible implementar estructuras bifurcantes y anidadas, como condicionales y ciclos, utilizando únicamente saltos condicionados entre distintos fragmentos de código secuencial en ensamblador.
-- La generación de código en tiempo de ejecución es, con algunas diferencias relativamente menores, el mismo proceso que la generación en tiempo de compilación.
 
+## Sobre compilación de para lenguajes que generan código en tiempo de ejecución
+
+- La generación de código en tiempo de ejecución es, con algunas diferencias relativamente menores, el mismo proceso que la generación en tiempo de compilación.
+- La etapa de optimización en un lenguaje que debe generar código de manera dinámica en tiempo de ejecución es un poco más compleja que para un lenguaje que no tiene esta funcionalidad.
+- La compilación de un lenguaje para que el mismo pueda generar código en tiempo de ejecución sigue siendo un área en investigación que tiene espacio para mejorar el proceso de compilado de forma que el código se encuentre lo más optimizado posble.
+- Al compilar un código que genera funcionalidad de manera dinámica hay que tener en cuenta los impactos en el desempeño del sistema que esta generación dinámica pueda tener, y desarrollar las contramedidas necesarias para lidiar con estos impactos o minimizarlos.
+
+# Conclusiones generales
+
+- Las etapa de optimización antes y alrededor de la generación de código son fundamental para asegurar la eficiencia.
+- La generación de código es un proceso que se apoya en el uso de grafos y otras estructuras de datos para tratar de linealizar la estructura lógica de un programa, de manera que el mismo pueda ser traducido de manera efectiva a lenguaje máquina.
+- Las estapas de generación de código involucran procedimientos cuya teoría requiere de un entendimiento adecuado de conceptos algo complejos, por lo que es importante tener una base sólida en conceptos matemáticos y de programación de formar que el entendimiento de estos conceptos se facilite.
+- Generación de código sin optimización es un buen ejercicio para comprender los principios detrás de este proceso, pero en aplicaciones reales no se puede prescindir de la etapa de optimización por los impactos que esto tendría en el desempeño del programa compilado.
 
 # Bibliografía
 
