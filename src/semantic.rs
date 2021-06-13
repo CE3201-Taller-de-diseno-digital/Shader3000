@@ -20,7 +20,19 @@ struct SymbolTable<'a> {
 
 impl SymbolTable<'_> {
     fn lookup(&self, id: &Located<Identifier>) -> Semantic<&Named> {
-        self.symbols.get(id).ok_or_else(|| {
+        let mut table = self;
+        let named = loop {
+            match table.symbols.get(id) {
+                Some(id) => break Some(id),
+
+                None => match table.outer.as_ref() {
+                    Some(outer) => table = outer,
+                    None => break None,
+                }
+            }
+        };
+
+        named.ok_or_else(|| {
             Located::at(
                 SemanticError::Undefined(id.as_ref().clone()),
                 id.location().clone(),
@@ -172,10 +184,6 @@ pub enum SemanticError {
 impl parse::Ast {
     pub fn resolve(self) -> Semantic<ir::Program> {
         let mut global_scope = self.scan_global_scope()?;
-        let context = Context {
-            scope: &mut global_scope,
-            sink: &mut TypeCheck,
-        };
 
         let code = self
             .iter()
