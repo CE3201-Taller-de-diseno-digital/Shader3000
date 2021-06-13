@@ -49,6 +49,16 @@ pub struct Parameter {
     of: Located<Type>,
 }
 
+impl Parameter {
+    pub fn name(&self) -> &Located<Identifier> {
+        &self.name
+    }
+
+    pub fn of(&self) -> &Located<Type> {
+        &self.of
+    }
+}
+
 #[derive(Debug)]
 pub enum Type {
     Int,

@@ -31,7 +31,9 @@ impl SymbolTable<'_> {
 
 enum Named {
     Var(Variable),
-    Proc(Procedure),
+    Procs {
+        variants: HashMap<Vec<Type>, Rc<String>>,
+    },
 }
 
 #[derive(Clone)]
@@ -40,18 +42,13 @@ struct Variable {
     typ: Type,
 }
 
-struct Procedure {
-    symbol: Rc<String>,
-    parameters: Vec<Type>,
-}
-
 #[derive(Clone)]
 enum Access {
     Global(Global),
     Local(Local),
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Type {
     Int,
     Bool,
@@ -109,7 +106,7 @@ pub type Semantic<T> = Result<T, Located<SemanticError>>;
 #[non_exhaustive]
 #[derive(Error, Debug)]
 pub enum SemanticError {
-    #[error("Entrypoint not found, define a parameterless`procedure main()`")]
+    #[error("Entrypoint not found, define a parameterless `procedure main()`")]
     NoMain,
 
     #[error("Mismatch in number of targets and values")]
@@ -126,6 +123,12 @@ pub enum SemanticError {
 
     #[error("Symbol `{0}` is undefined")]
     Undefined(Identifier),
+
+    #[error("This definition for `{0}` is in conflict with a global variable")]
+    NameClash(Identifier),
+
+    #[error("Redefinition of procedure `{0}` with the same parameter types")]
+    SignatureClash(Identifier),
 }
 
 impl parse::Ast {
@@ -135,11 +138,12 @@ impl parse::Ast {
         let globals = global_scope
             .symbols
             .into_iter()
-            .filter_map(|(id, named)| match named {
+            .filter_map(|(_, named)| match named {
                 Named::Var(Variable {
                     access: Access::Global(global),
                     ..
                 }) => Some(global),
+
                 _ => None,
             })
             .collect();
@@ -180,6 +184,45 @@ fn scan_global_scope(ast: &parse::Ast) -> Semantic<SymbolTable<'static>> {
                 };
 
                 globals.symbols.insert(id.clone(), Named::Var(var));
+            }
+        }
+    }
+
+    for procedure in ast.iter() {
+        let types = procedure
+            .parameters()
+            .iter()
+            .map(|param| match param.of().as_ref() {
+                parse::Type::Int => Ok(Type::Int),
+                parse::Type::Bool => Ok(Type::Bool),
+                parse::Type::List => Ok(Type::List),
+                parse::Type::Of(expr) => {
+                    let (typ, _) = eval(expr, Local(42), &mut TypeCheck(&mut globals))?;
+                    Ok(typ)
+                }
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let (location, name) = procedure.name().clone().split();
+        let mut named = globals.symbols.entry(name).or_insert_with(|| Named::Procs {
+            variants: HashMap::new(),
+        });
+
+        let id = procedure.name().as_ref();
+        let symbol = Rc::new(mangle(id, &types));
+
+        match named {
+            Named::Var(_) => {
+                return Err(Located::at(SemanticError::NameClash(id.clone()), location))
+            }
+
+            Named::Procs { variants } => {
+                if variants.insert(types, symbol).is_some() {
+                    return Err(Located::at(
+                        SemanticError::SignatureClash(id.clone()),
+                        location,
+                    ));
+                }
             }
         }
     }
@@ -265,7 +308,7 @@ fn read<'a, S: Sink<'a>>(
     let var = target.var();
     let var = match sink.symbols().lookup(var)? {
         Named::Var(var) => var,
-        Named::Proc(_) => {
+        Named::Procs { .. } => {
             return Err(Located::at(
                 SemanticError::ExpectedVar(var.as_ref().clone()),
                 var.location().clone(),
