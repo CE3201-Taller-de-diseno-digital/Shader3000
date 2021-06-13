@@ -133,7 +133,12 @@ pub enum SemanticError {
 
 impl parse::Ast {
     pub fn resolve(self) -> Semantic<ir::Program> {
-        let global_scope = scan_global_scope(&self)?;
+        let mut global_scope = scan_global_scope(&self)?;
+
+        let code = self
+            .iter()
+            .map(|procedure| scan_procedure(procedure, &mut global_scope))
+            .collect::<Result<Vec<_>, _>>()?;
 
         let globals = global_scope
             .symbols
@@ -148,10 +153,7 @@ impl parse::Ast {
             })
             .collect();
 
-        Ok(ir::Program {
-            code: vec![],
-            globals,
-        })
+        Ok(ir::Program { code, globals })
     }
 }
 
@@ -189,22 +191,10 @@ fn scan_global_scope(ast: &parse::Ast) -> Semantic<SymbolTable<'static>> {
     }
 
     for procedure in ast.iter() {
-        let types = procedure
-            .parameters()
-            .iter()
-            .map(|param| match param.of().as_ref() {
-                parse::Type::Int => Ok(Type::Int),
-                parse::Type::Bool => Ok(Type::Bool),
-                parse::Type::List => Ok(Type::List),
-                parse::Type::Of(expr) => {
-                    let (typ, _) = eval(expr, Local(42), &mut TypeCheck(&mut globals))?;
-                    Ok(typ)
-                }
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let types = parameter_types(procedure, &mut globals)?;
 
         let (location, name) = procedure.name().clone().split();
-        let mut named = globals.symbols.entry(name).or_insert_with(|| Named::Procs {
+        let named = globals.symbols.entry(name).or_insert_with(|| Named::Procs {
             variants: HashMap::new(),
         });
 
@@ -228,6 +218,23 @@ fn scan_global_scope(ast: &parse::Ast) -> Semantic<SymbolTable<'static>> {
     }
 
     Ok(globals)
+}
+
+fn scan_procedure(
+    procedure: &parse::Procedure,
+    globals: &mut SymbolTable<'static>,
+) -> Semantic<ir::GeneratedFunction> {
+    let types = parameter_types(procedure, globals)?;
+    let symbol = match globals.symbols.get(procedure.name().as_ref()) {
+        Some(Named::Procs { variants }) => variants.get(&types).unwrap().clone(),
+        _ => unreachable!(),
+    };
+
+    Ok(ir::GeneratedFunction {
+        name: symbol,
+        body: Vec::new(),
+        parameters: procedure.parameters().len() as u32,
+    })
 }
 
 fn break_assignment<'a>(
@@ -328,6 +335,25 @@ fn read<'a, S: Sink<'a>>(
     }
 
     Ok((var.typ, Ownership::Borrowed))
+}
+
+fn parameter_types(
+    procedure: &parse::Procedure,
+    globals: &mut SymbolTable<'static>,
+) -> Semantic<Vec<Type>> {
+    procedure
+        .parameters()
+        .iter()
+        .map(|param| match param.of().as_ref() {
+            parse::Type::Int => Ok(Type::Int),
+            parse::Type::Bool => Ok(Type::Bool),
+            parse::Type::List => Ok(Type::List),
+            parse::Type::Of(expr) => {
+                let (typ, _) = eval(expr, Local(42), &mut TypeCheck(globals))?;
+                Ok(typ)
+            }
+        })
+        .collect()
 }
 
 fn mangle(name: &Identifier, types: &[Type]) -> String {
