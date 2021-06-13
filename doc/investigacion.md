@@ -22,6 +22,9 @@ bibliography: investigacion.bib
 csl: /home/josfemova/UsefulRepos/styles/ieee.csl
 nocite: |
   @crcc, @icld
+output:
+  pdf_document:
+    fig_caption: true
 ...
 
 \maketitle
@@ -128,27 +131,19 @@ loop_2_break:
 ```
 Analicemos el primer fragmeto:
 
-![](imgs/fig1.png)
-
-**Figura 1**
+![\label{fig1}](imgs/fig1.png){width=50%}
 
 `i = 0` es una declaración, por lo que para generar el código en X86 se utiliza el procedimiento anteriormente especificado para la generacion de declaraciones. Es especificamente las dos primeras lineas `pushq` donde se crea un espacio para `i` y un puntero. Las siguiente dos, `movq`, asignan los valores a ambas variables.
 
-![](imgs/fig2.png)
-
-**Figura 2**
+![\label{fig2}](imgs/fig2.png){width=50%}
 
 `while i < 10:` es una estructura que genera un loop, para generar el código se utilizan los procedimientos descritos en “Generación de estructuras”. Para este caso únicamente se analiza la declaración del while y su condición. Estos generan el código de la figura 2. Las primeras 3 líneas se utilizan para evaluar la condición. `cmpq` NO activa un flag si `i < 10`, de lo contrario si lo activa. `jnl` es un salto condicional (Salto si no es menos). Si el flag está activo salta directamente a `loop_3_less`, tal como se aprecia en la figura 4. Si no, primero pasa por `incq` que incrementa el valor de `rax` en 1, que gracias a `movq $0 , %rax` era cero, por lo que pasaría a ser 1. 
 
-![](imgs/fig3.png)
-
-**Figura 3**
+![\label{fig3}](imgs/fig3.png){width=50%}
 
 Para este caso nos encontramos dentro del ciclo, y tenemos las expresiones internas del ciclo. El código generado contempla que se está dentro de un ciclo y además genera el código de cada expresión. Primero, se evalúa si `rax` es 0. Si es cierto el flag zero se activa. En la siguiente línea `jz` es un salto condicional que se ejecuta si el flag zero está activo. De ser así se salta a `loop_2_break` (ver figura 4). Comenzado con la expresión interna de putc las siguientes 4 líneas se encargan de generar el valor de `65 + i`. Las siguientes dos hacen el llamado a la función `putc`. Y el resto, menos `jmp`, que realiza el salto de nuevo a loop para crear el ciclo, son el producto de `i = i + 1`. Vale la pena analizar que esas 4 instrucciones podrían ser sintetizadas en `addq $1, 8(%rbp)` o inclusive `incq 8(%rbp)`, lo que sugiere que este código puede ser optimizado (tal como se mecionaba al comienzo de la investigación), un resultado como esos sería un producto de una sintaxis como `i++`, pero como la expresión es distinta el compilador “toma el camino largo”. Finalmente el último segmento simplemente desaloja las variables y retorna a la función que lo llamó.
 
-![](imgs/fig4.png)
-
-**Figura 4**
+![\label{fig4}](imgs/fig4.png){width=30%}
 
 ## Generación de código en tiempo de ejecución
 
