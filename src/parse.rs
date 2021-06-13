@@ -1,5 +1,3 @@
-//! Análisis sintáctico.
-
 use std::{iter::Peekable, marker::PhantomData};
 use thiserror::Error;
 
@@ -9,13 +7,40 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct Ast(Vec<Procedure>);
+pub struct Ast {
+    procedures: Vec<Procedure>,
+    eof: Location,
+}
+
+impl Ast {
+    pub fn iter(&self) -> impl Iterator<Item = &Procedure> {
+        self.procedures.iter()
+    }
+
+    pub fn eof(&self) -> &Location {
+        &self.eof
+    }
+}
 
 #[derive(Debug)]
 pub struct Procedure {
     name: Located<Identifier>,
     parameters: Vec<Parameter>,
     statements: Vec<Statement>,
+}
+
+impl Procedure {
+    pub fn name(&self) -> &Located<Identifier> {
+        &self.name
+    }
+
+    pub fn parameters(&self) -> &[Parameter] {
+        &self.parameters
+    }
+
+    pub fn statements(&self) -> &[Statement] {
+        &self.statements
+    }
 }
 
 #[derive(Debug)]
@@ -148,6 +173,16 @@ pub struct Target {
     indices: Vec<Located<Index>>,
 }
 
+impl Target {
+    pub fn var(&self) -> &Located<Identifier> {
+        &self.variable
+    }
+
+    pub fn indices(&self) -> &[Located<Index>] {
+        &self.indices
+    }
+}
+
 #[derive(Debug)]
 pub enum Index {
     Direct(Selector),
@@ -175,7 +210,7 @@ pub enum ParserError {
     #[error("Expected identifier")]
     ExpectedId,
 
-    #[error("Expected any of `if`, `for`, `call`, assignment or method call")]
+    #[error("Expected any of `if`, `for`, `call`, assignment, method call or built-in call")]
     ExpectedStatement,
 
     #[error("Expected any of `int`, `bool`, `list`")]
@@ -203,7 +238,7 @@ pub fn parse<'a, T>(tokens: T, empty_location: Location) -> Result<Ast, Located<
 where
     T: TokenStream<'a>,
 {
-    let mut parser = Parser {
+    let parser = Parser {
         tokens: tokens.peekable(),
         last_known: empty_location,
         lifetime_hack: PhantomData,
@@ -333,13 +368,16 @@ impl<T> ParseExt for Parse<T> {
 }
 
 impl<'a, I: TokenStream<'a>> Parser<'a, I> {
-    fn program(&mut self) -> Parse<Ast> {
+    fn program(mut self) -> Parse<Ast> {
         let mut procedures = Vec::new();
         while self.tokens.peek().is_some() {
             procedures.push(self.procedure()?);
         }
 
-        Ok(Ast(procedures))
+        Ok(Ast {
+            procedures,
+            eof: self.last_known,
+        })
     }
 
     fn procedure(&mut self) -> Parse<Procedure> {

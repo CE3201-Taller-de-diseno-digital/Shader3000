@@ -76,8 +76,20 @@ pub enum LexerError {
 /// Un identificador.
 ///
 /// Los identificadores cumplen ciertas reglas de contenido y longitud.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Identifier(Rc<NoCase<String>>);
+
+impl AsRef<str> for Identifier {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
+    }
+}
+
+impl Display for Identifier {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.as_ref().fmt(fmt)
+    }
+}
 
 /// Un literal de cadana.
 #[derive(Debug, Clone, PartialEq, Eq)]
