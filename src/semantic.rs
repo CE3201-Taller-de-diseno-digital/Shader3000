@@ -130,11 +130,23 @@ pub enum SemanticError {
 
 impl parse::Ast {
     pub fn resolve(self) -> Semantic<ir::Program> {
-        let scope = scan_global_scope(&self)?;
+        let global_scope = scan_global_scope(&self)?;
+
+        let globals = global_scope
+            .symbols
+            .into_iter()
+            .filter_map(|(id, named)| match named {
+                Named::Var(Variable {
+                    access: Access::Global(global),
+                    ..
+                }) => Some(global),
+                _ => None,
+            })
+            .collect();
 
         Ok(ir::Program {
             code: vec![],
-            globals: vec![],
+            globals,
         })
     }
 }
