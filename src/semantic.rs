@@ -3,6 +3,7 @@ use thiserror::Error;
 use std::{
     collections::HashMap,
     fmt::{self, Display},
+    rc::Rc,
 };
 
 use crate::{
@@ -40,7 +41,7 @@ struct Variable {
 }
 
 struct Procedure {
-    symbol: String,
+    symbol: Rc<String>,
     parameters: Vec<Type>,
 }
 
@@ -129,7 +130,7 @@ pub enum SemanticError {
 
 impl parse::Ast {
     pub fn resolve(self) -> Semantic<ir::Program> {
-        let _scope = scan_global_scope(&self)?;
+        let scope = scan_global_scope(&self)?;
 
         Ok(ir::Program {
             code: vec![],

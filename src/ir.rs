@@ -31,27 +31,27 @@ use std::rc::Rc;
 #[derive(Debug)]
 pub struct Program {
     pub globals: Vec<Global>,
-    pub code: Vec<Function>,
+    pub code: Vec<GeneratedFunction>,
 }
 
 #[derive(Clone, Debug)]
 pub enum Function {
     External(&'static str),
-    Generated(Rc<GeneratedFunction>),
+    Generated(Rc<String>),
 }
 
 impl Function {
     pub fn name(&self) -> &str {
         match self {
             Function::External(name) => name,
-            Function::Generated(generated) => &generated.name,
+            Function::Generated(name) => &name,
         }
     }
 }
 
 #[derive(Debug)]
 pub struct GeneratedFunction {
-    pub name: String,
+    pub name: Rc<String>,
     pub body: Vec<Instruction>,
     pub parameters: u32,
 }

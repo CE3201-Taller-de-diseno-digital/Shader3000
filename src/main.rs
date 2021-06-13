@@ -101,8 +101,8 @@ fn test_program() -> Program {
     let builtin_print_led = Function::External("builtin_printled");
     let builtin_blink_mil = Function::External("builtin_blink_mil");
 
-    let user_main = Function::Generated(Rc::new(GeneratedFunction {
-        name: String::from("user_main"),
+    let user_main = GeneratedFunction {
+        name: Rc::new(String::from("user_main")),
         parameters: 0,
         body: vec![
             Instruction::LoadConst(0, Local(0)),
@@ -136,7 +136,7 @@ fn test_program() -> Program {
             },
             Instruction::Jump(Label(0)),
         ],
-    }));
+    };
 
     Program {
         globals: vec![],

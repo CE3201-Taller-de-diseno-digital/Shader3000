@@ -6,7 +6,7 @@
 
 use crate::{
     arch::{Arch, Emitter, Register},
-    ir::{Function, GeneratedFunction, Instruction, Label, Local, Program},
+    ir::{GeneratedFunction, Instruction, Label, Local, Program},
 };
 
 use std::{
@@ -37,11 +37,9 @@ pub fn emit(program: &Program, arch: Arch, output: &mut dyn Write) -> io::Result
 
     // Se emite propiamente cada función no externa
     for function in &program.code {
-        if let Function::Generated(generated) = function {
-            dispatch_arch!(Emitter: arch => {
-                emit_body::<Emitter>(output, generated)?;
-            });
-        }
+        dispatch_arch!(Emitter: arch => {
+            emit_body::<Emitter>(output, function)?;
+        });
     }
 
     Ok(())
