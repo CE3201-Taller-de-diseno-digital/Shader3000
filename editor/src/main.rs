@@ -1,3 +1,24 @@
+//! Editor de código
+//! 
+//! Esta es una implementación sencilla de un editor
+//! de código especializado para el lenguaje creado,
+//! utilizando crates que adaptan GTK y su sourceview
+//! para rust.
+//!  
+//! El editor cuenta con funcionalidades de lectura,
+//! apertura y creacion de archivos, guardado automático 
+//! (a la hora de cerrar un archivo o compilarlo),
+//! guardado manual y sobrescritura de archivos, 
+//! syntax highlight para código del lenguaje
+//! creado , compilación y ejecución automáticas
+//! y una terminal para desplegar errores de 
+//! compilación y otra información revelante.
+//! 
+//! Además cuenta con diferentes estilos para
+//! la intefaz. Y un botón de about que muestra
+//! información adicional.
+
+
 extern crate gio;
 extern crate glib;
 extern crate gtk;
@@ -13,6 +34,10 @@ use std::io::BufReader;
 use std::path::Path;
 use std::process::{Command, Stdio};
 
+/// Función main
+/// Incia la aplicación de GTK
+/// Llama a la función principal build_ui
+/// Inicia el ciclo principal del programa
 fn main() {
     let application = gtk::Application::new(Some("com.editor.animationLED"), Default::default())
         .expect("Initialization failed...");
@@ -25,21 +50,28 @@ fn main() {
     application.run(&args().collect::<Vec<_>>());
 }
 
+/// Función build_ui
+/// Esta función se encarga de crear elementos gráficos,
+/// obtener elementos graficos del archivo .glade y
+/// de dar la funcionalidad respectiva a cada 
+/// uno de los botones disponibles.
 fn build_ui(application: &gtk::Application) {
     //               ____________________
     //______________/  Create main window
 
+    //Load .glade file
     let glade_src = include_str!("IDE.glade");
     let builder = gtk::Builder::from_string(glade_src);
+
+    //create main window
     let window: gtk::ApplicationWindow = builder
         .get_object("main_window")
         .expect("Couldn't get window");
     window.set_application(Some(application));
-
     window.set_position(gtk::WindowPosition::Center);
 
+    // Load the .css file
     let provider = gtk::CssProvider::new();
-    // Load the CSS file
     provider
         .load_from_path("editor/src/resources/style.css")
         .unwrap();
@@ -49,8 +81,8 @@ fn build_ui(application: &gtk::Application) {
         gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
 
-    //               ___________________
-    //______________/  Get components
+    //               ______________________
+    //______________/  Get glade components
 
     //Buttons
     let compile_run: gtk::Button = builder.get_object("comp_and_run").unwrap();
@@ -77,8 +109,9 @@ fn build_ui(application: &gtk::Application) {
             .get_language("led")
             .unwrap(),
     );
-    buffer.set_highlight_syntax(true);
 
+        //Set sourceview proprieties 
+    buffer.set_highlight_syntax(true);
     let sourceview = sourceview::View::new_with_buffer(&buffer);
     sourceview.set_auto_indent(true);
     sourceview.set_indent_on_tab(true);
@@ -98,11 +131,16 @@ fn build_ui(application: &gtk::Application) {
     let doc_name: gtk::Label = builder.get_object("doc_name").unwrap();
 
     //File
-    let current_file = gtk::Label::new(Some("build/tmp.led"));
+    let current_file = gtk::Label::new(Some("build/tmp.led")); //Ruta de guardado para archivos unnamed
 
     //               ___________________
     //______________/  Add funtionality
 
+    // Add "compile" button functionality
+    // 
+    // Guardado automático
+    // Envio de archivo al compilador
+    // Despliegue de mensajes del compilador en la terminal
     compile.connect_clicked(
         clone!(@weak save, @weak current_file, @weak terminal=> move |_| {
 
@@ -127,6 +165,11 @@ fn build_ui(application: &gtk::Application) {
         }),
     );
 
+    // Add "compile and run" button functionality
+    // 
+    // Ejecutar compile primero
+    // Flasheo del código compilado
+    // Despliegue de mensajes en la terminal
     compile_run.connect_clicked(clone!(@weak compile, @weak terminal => move |_| {
 
        compile.activate();
@@ -140,6 +183,11 @@ fn build_ui(application: &gtk::Application) {
 
     }));
 
+    // Add "new" button functionality
+    // 
+    // Guardado automático
+    // Limpieza de buffer de texto
+    // Cambio de ruta de guardado y nombre de archivo
     new.connect_activate(
         clone!(@weak sourceview ,@weak doc_name, @weak current_file, @weak save => move |_| {
 
@@ -161,6 +209,12 @@ fn build_ui(application: &gtk::Application) {
     let doc_name_open = doc_name.clone();
     let current_file_open = current_file.clone();
 
+    // Add "open" button functionality
+    // 
+    // Abrir el seleccionardor de archivos
+    // Guardado automático
+    // Lectura de archivo y despligue en buffer de texto
+    // Cambio de ruta de guardado y nombre del archivo
     open.connect_activate(clone!(@weak window , @weak save => move |_| {
 
         let file_chooser = gtk::FileChooserDialog::new(
@@ -207,11 +261,13 @@ fn build_ui(application: &gtk::Application) {
     }));
 
     let current_file_save = current_file.clone();
-
     let src_view_save = sourceview.clone();
 
-    //let terminal_save = terminal.clone();
-
+    // Add "save" button functionality
+    // 
+    // Tomar ruta de guardado actual
+    // Tomar texto actual del buffer
+    // Escribir bytes a la ruta especificada
     save.connect_activate(
         clone!(@weak current_file_save,@weak src_view_save,@weak terminal => move |_| {
 
@@ -247,11 +303,15 @@ fn build_ui(application: &gtk::Application) {
     );
 
     let src_view_as = sourceview.clone();
-
     let doc_name_as = doc_name.clone();
-
     let current_file_as = current_file.clone();
 
+    // Add "save as" button functionality
+    // 
+    // Abrir seleccionador de archivos
+    // Tomar ruta y nombre seleccionados
+    // Tomar texto actual del buffer
+    // Crear archivo con los bytes a la ruta y nombre especificados
     save_as.connect_activate(clone!(@weak window => move |_| {
 
         let file_chooser = gtk::FileChooserDialog::new(
@@ -307,6 +367,10 @@ fn build_ui(application: &gtk::Application) {
         file_chooser.show_all();
     }));
 
+
+    // Add themes button functionality
+    // 
+    // Cambia el esquema de colores del buffer segun lo seleccionado
     themes.connect_property_style_scheme_notify(clone!(@weak buffer, @weak themes => move |_| {
 
         let scheme = themes.get_style_scheme();
@@ -314,13 +378,17 @@ fn build_ui(application: &gtk::Application) {
 
     }));
 
+    // Add "about" button funtionality
+    // 
+    // Abre la ventana de about
     about.connect_activate(move |_| {
         about_win.show_all();
     });
 
+    // Add "quit" button funtionality
+    // 
+    // Cierra ventana
     quit.connect_activate(clone!(@weak window , @weak save => move |_| {
-
-        save.activate();
 
         window.close();
 
@@ -328,7 +396,12 @@ fn build_ui(application: &gtk::Application) {
 
     window.show_all();
 
-    window.connect_delete_event(|_, _| {
+    // When window destroyed 
+    // 
+    // Guarda el archivo
+    // Detiene el ciclo principal de GTK
+    window.connect_delete_event(move|_, _| {
+        save.activate();
         gtk::main_quit();
         Inhibit(false)
     });
