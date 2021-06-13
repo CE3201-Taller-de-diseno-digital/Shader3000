@@ -36,6 +36,13 @@ output:
 \pagenumbering{arabic}
 \setcounter{page}{1}
 
+# Enlace a video de presentación
+
+"Generación de Código: Investigación para el curso de CE3104 - Compiladores e Intérpretes, tema 4"
+
+<https://youtu.be/4XGjQPLzzBo>
+
+
 # Objetivos
 
 - Explicar los conceptos básicos detrás de la etapa de generación de código en un compilador actual.
@@ -45,7 +52,7 @@ output:
 
 # Introducción
 
-En la presente investigación se pretende ahondar en una de las etapas llevada a cabo durante el proceso de compilación, conocida como generación de código. Para ello se comenzará con una explicación de los conceptos básicos a manejar para comprender a cabalidad esta etapa, a su vez se explicarán los pasos mínimos más comunes requeridos al generar código, esto con el fin de brindar una comprensión global del proceso de manera simplificada y teórica. Este segmento de la investigación se basa principalmente en “Introduction to Compilers and Language Design”[@icld].
+En la presente investigación se pretende ahondar en una de las etapas llevadas a cabo durante el proceso de compilación, conocida como generación de código. Para ello se comenzará con una explicación de los conceptos básicos a manejar para comprender a cabalidad esta etapa, a su vez se explicarán los pasos mínimos más comunes requeridos al generar código, esto con el fin de brindar una comprensión global del proceso de manera simplificada y teórica. Este segmento de la investigación se basa principalmente en “Introduction to Compilers and Language Design”[@icld].
 
 Adicionalmente, valiéndonos del conocimiento en el primer segmento, se expondrá un procedimiento alternativo para la etapa de generación de código. Dicho procedimiento consiste en la generación de código en tiempo de ejecución, un método que pretende generar código especializado creado rápidamente de manera dinámica, mediante el uso de templates y código precompilado. Para esta sección se ha utilizado como base “Compiling for Runtime Code Generation”[@crcc].
 
@@ -88,14 +95,17 @@ Para generar declaraciones de funciones se debe emitir una etiqueta con el nombr
 ### Ejemplo de generación de código
 
 Para ilustrar el proceso de generación de código se analizará un ejemplo sencillo presentando el significado del código traducido así como su origen y el proceso que lo genera. Sea el siguiente código fuente para un lenguaje fuente propuesto:
-```
+
+```python
 i = 0
 while i < 10:
     putc(65 + i)
     i = i + 1
 ```
+
 Dada la arquitectura x86-64, así como la teoría descrita con anterioridad, un posible listado emitido para el fragmento anterior podría ser el siguiente:
-``` 
+
+```asm
 loop:
         pushq   $0              # allocate stack space for "i"
         pushq   %rbp            # save and setup frame pointer
@@ -130,20 +140,21 @@ loop_2_break:
 
 Considérese la primera sección de este listado, a como muestra la Figura 1.
 
-![\label{fig1}](imgs/fig1.png){width=50%}
+![\label{fig1} Traducción de una asignación](imgs/fig1.png){width=60%}
 
 Las primeras tres instrucciones constituyen el prólogo de la función, y la cuarta es la inicialización de `i`. Nótese que el prólogo reserva memoria para las locales que se utilizarán durante la ejecución de la función y ajusta tanto stack pointer (`%rsp`) como frame pointer (`%rbp`) para formar un nuevo marco de llamada. `i = 0` es una declaración, por lo que para generar el código en x86 se utiliza el procedimiento anteriormente especificado para la generacion de declaraciones e inicializadores. La cuarta instrucción guarda un cero en la posición de memoria que corresponde a `i`. Nótese que un mecanismo de generación de código más óptimo evitaría esta última instrucción, ya que por consecuencia de `pushq $0` ya existe un valor de cero en esa posición.
 
 A continuación se comienza y mantiene un bucle, ver Figura 2.
-![\label{fig2}](imgs/fig2.png){width=50%}
+
+![\label{fig2} Traducción de sentencia while](imgs/fig2.png){width=60%}
 
 Para generar código se utilizan los mismos procedimientos descritos en “Generación de estructuras”. Para este caso, únicamente se analiza la declaración del `while` y su condición. Las primeras tres instrucciones se utilizan para evaluar la condición. `cmpq` resta sus dos operandos (el segundo menos el primero, debido a la inversión de orden de operandos presente en sintaxis AT&T), altera banderas de `RFLAGS` según el resultaod de la resta y luego descarta el resultado de la resta. Estas banderas incluyen tales hechos como que el resultado sea cero o distinto de cero, que la interpretación en complemento a dos del resultado sea positiva o negativa, entre otras. `jnl` ("jump if not less") es un salto condicional que se da si y solo si las banderas adecuadas que resultan tras una operación `cmp b, a` donde `!(a < b)`. En este caso, ello quiere decir que el salto ocurre si y solo si `i >= 10`, la condición opuesta a la condición fuente del bucle. Si la condición de salto no se cumple, `jnl` se comporta igual que `nop` (no realiza ninguna acción). La Figura 3 muestra las consecuencias de un salto a `loop_3_less`. Si no hay salto, primero pasa por una instrucción `incq` que incrementa en 1 el valor de `%rax`, que gracias a `movq $0 , %rax` era cero, por lo que pasaría a ser 1 si y solo si la condición de salto no se cumple (es decir, si la condición del bucle sí se cumple). En otras palabras, al momento de llegar a `loop_3_less` el registro `%rax` contiene un booleano con el resultado de evaluar `i < 10`.
 
-![\label{fig3}](imgs/fig3.png){width=50%}
+![\label{fig3} Traducción del cuerpo del ciclo](imgs/fig3.png){width=60%}
 
 Para este caso nos encontramos dentro del ciclo, y tenemos las expresiones internas del ciclo. El código generado contempla que se está dentro de un ciclo y además genera el código de cada expresión. Primero, se evalúa si `%rax` es 0. Si es cierto entonces `ZF` ("zero flag") se activa en `RFLAGS`. En la siguiente línea `jz` es un salto condicional que se toma si y solo si `ZF` está activa. De ser así, se salta a `loop_2_break` (ver Figura 4). Comenzando con la expresión interna de llamada a `putc`, las siguientes 4 líneas se encargan de generar el valor de `65 + i`. Las siguientes dos hacen el llamado a la función `putc` con posiciones apropiadas de cada argumento. El resto (con excepción de `jmp`, que realiza el salto de nuevo a loop para crear el ciclo), son el producto de la sentencia `i = i + 1`. Vale la pena analizar que esas 4 instrucciones podrían ser sintetizadas en `addq $1, 8(%rbp)` o inclusive `incq 8(%rbp)`, lo que sugiere que este código puede ser optimizado (tal como se mecionaba al comienzo de la investigación). Un resultado como esos sería un producto de una sintaxis como `i++`, pero como la expresión es distinta el compilador “toma el camino largo”.
 
-![\label{fig4}](imgs/fig4.png){width=30%}
+![\label{fig4} Traducción completa del ejemplo](imgs/fig4.png){width=30%}
 
 Finalmente, el último segmento de tres instrucciones es el epílogo, el cual desaloja las variables locales, destruye el marco y retorna a la función que llamó.
 
@@ -196,7 +207,7 @@ Las optimizaciones aplicables sobre IR con huecos son mayormente idénticas a la
 ## Sobre el artículo de generación de código
 
 - Antes de poder generar expresiones, hace falta ser capaces de alojar, nombrar y liberar registros en el procesador. 
-- Es posible generar código para expresiones si estas son representadas como estructuras AST o DAG y recorridas en postorden.
+- Es posible generar código para expresiones si son representadas como estructuras AST o DAG, y posteriormente estas mismas estructuras son recorridas en postorden.
 - En ocasiones una única expresión puede generar multiples líneas de código ensamblador, esto debido a alojos y desalojos de registros o casos especiales como es el `imul` de x86.
 - Es posible implementar estructuras bifurcantes y anidadas, como condicionales y ciclos, utilizando únicamente saltos condicionados entre distintos fragmentos de código secuencial en ensamblador.
 
@@ -209,10 +220,13 @@ Las optimizaciones aplicables sobre IR con huecos son mayormente idénticas a la
 
 # Conclusiones generales
 
-- Las etapa de optimización antes y alrededor de la generación de código son fundamental para asegurar la eficiencia.
+- Las etapas de optimización antes y alrededor de la generación de código son fundamentales para asegurar la eficiencia.
 - La generación de código es un proceso que se apoya en el uso de grafos y otras estructuras de datos para tratar de linealizar la estructura lógica de un programa, de manera que el mismo pueda ser traducido de manera efectiva a lenguaje máquina.
-- Las estapas de generación de código involucran procedimientos cuya teoría requiere de un entendimiento adecuado de conceptos algo complejos, por lo que es importante tener una base sólida en conceptos matemáticos y de programación de formar que el entendimiento de estos conceptos se facilite.
+- Las estapas de generación de código involucran procedimientos cuya teoría requiere de un entendimiento adecuado de conceptos algo complejos, por lo que es importante tener una base sólida en conceptos matemáticos y de programación de forma que el entendimiento de estos conceptos se facilite.
 - Generación de código sin optimización es un buen ejercicio para comprender los principios detrás de este proceso, pero en aplicaciones reales no se puede prescindir de la etapa de optimización por los impactos que esto tendría en el desempeño del programa compilado.
+
+$~~~~~$
+$~~~~~$
 
 # Bibliografía
 
