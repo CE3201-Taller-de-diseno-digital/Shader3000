@@ -110,10 +110,17 @@ url{https://wiki.gnome.org/Projects/GtkSourceView}
 
 ### 3 de junio
 
+- Documentación, reunión con Natalia para discutir aspectos de la documentación.
+  
 ### 4 de junio
 
+- Agregar funciones de compliar y correr al editor.
+- Documentación.
+  
 ### 5 de junio
 
+- Documentación.
+  
 ### 6 de junio
 
 ### 7 de junio
@@ -125,5 +132,21 @@ url{https://wiki.gnome.org/Projects/GtkSourceView}
 ### 10 de junio
 
 ### 11 de junio
+
+### 12 de junio
+
+- Documentacion interna del código del editor.
+
+### 13 de junio
+
+### 14 de junio
+
+### 15 de junio
+
+### 16 de junio
+
+### 17 de junio
+
+### 18 de junio
 
 
