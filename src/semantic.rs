@@ -190,6 +190,9 @@ pub enum SemanticError {
     #[error("Expected variable, found procedure family `{0}`")]
     ExpectedVar(Identifier),
 
+    #[error("Expected procedure, found variable `{0}`")]
+    ExpectedProc(Identifier),
+
     #[error("Symbol `{0}` is undefined")]
     Undefined(Identifier),
 
@@ -201,6 +204,9 @@ pub enum SemanticError {
 
     #[error("Parameter `{0}` is bound more than once")]
     RepeatedParameter(Identifier),
+
+    #[error("Procedure family `{0}` exists, but the overload `{0}({1})` is not defined")]
+    NoSuchOverload(Identifier, String),
 }
 
 impl parse::Ast {
@@ -360,6 +366,7 @@ impl<S: Sink> Context<'_, S> {
 
             match statement {
                 If { condition, body } => self.scan_conditional(condition, body)?,
+                UserCall { procedure, args } => self.scan_user_call(procedure, args)?,
 
                 _ => todo!(),
             }
@@ -384,6 +391,54 @@ impl<S: Sink> Context<'_, S> {
 
         self.scan_statements(body)?;
         self.sink.push(Instruction::SetLabel(if_false));
+
+        Ok(())
+    }
+
+    fn scan_user_call(
+        &mut self,
+        target: &Located<Identifier>,
+        args: &[Located<parse::Expr>],
+    ) -> Semantic<()> {
+        let mut types = Vec::new();
+        let mut arg_locals = Vec::new();
+
+        for arg in args.iter() {
+            let local = self.sink.alloc_local();
+            let typ = self.eval_owned(arg, local)?;
+
+            arg_locals.push(local);
+            types.push(typ);
+        }
+
+        let target = match self.scope.lookup(target)? {
+            Named::Procs { variants } => variants.get(&types).ok_or_else(|| {
+                let types = types.iter().map(ToString::to_string).collect::<Vec<_>>();
+                let types = types.join(", ");
+
+                Located::at(
+                    SemanticError::NoSuchOverload(target.as_ref().clone(), types),
+                    target.location().clone(),
+                )
+            })?,
+
+            Named::Var(_) => {
+                return Err(Located::at(
+                    SemanticError::ExpectedProc(target.as_ref().clone()),
+                    target.location().clone(),
+                ))
+            }
+        };
+
+        self.sink.push(Instruction::Call {
+            target: Function::Generated(target.clone()),
+            arguments: arg_locals.clone(),
+            output: None,
+        });
+
+        for local in arg_locals.into_iter() {
+            self.sink.free_local(local);
+        }
 
         Ok(())
     }
@@ -413,6 +468,29 @@ impl<S: Sink> Context<'_, S> {
         };
 
         let (typ, _) = context.eval(expr, Local::default())?;
+        Ok(typ)
+    }
+
+    fn eval_owned(&mut self, expr: &Located<parse::Expr>, into: Local) -> Semantic<Type> {
+        use Ownership::{Borrowed, Owned};
+
+        let (typ, ownership) = self.eval(expr, into)?;
+        let cloner = match (typ, ownership) {
+            (_, Owned) => None,
+            (Type::Int, _) => None,
+            (Type::Bool, _) => None,
+            (Type::List, Borrowed) => Some("builtin_ref_list"),
+            (Type::Mat, Borrowed) => Some("builtin_ref_mat"),
+        };
+
+        if let Some(cloner) = cloner {
+            self.sink.push(Instruction::Call {
+                target: Function::External(cloner),
+                arguments: vec![into],
+                output: Some(into),
+            });
+        }
+
         Ok(typ)
     }
 
