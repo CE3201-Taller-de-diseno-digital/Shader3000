@@ -184,8 +184,8 @@ pub enum SemanticError {
     #[error("Type mismatch: expected `{0}`, found `{1}`")]
     ExpectedType(Type, Type),
 
-    #[error("Type mismatch: expected `list` or `mat`, found `{0}`")]
-    ExpectedListOrMat(Type),
+    #[error("Type mismatch: expected `{0}` or `{1}`, found `{2}`")]
+    ExpectedOneOfTwo(Type, Type, Type),
 
     #[error("Expected variable, found procedure family `{0}`")]
     ExpectedVar(Identifier),
@@ -389,15 +389,6 @@ impl<S: Sink> Context<'_, S> {
     }
 
     fn parameter_types(&mut self, procedure: &parse::Procedure) -> Semantic<Vec<Type>> {
-        let mut type_check = Context {
-            scope: SymbolTable {
-                outer: Some(&mut self.scope),
-                symbols: Default::default(),
-            },
-
-            sink: TypeCheck,
-        };
-
         procedure
             .parameters()
             .iter()
@@ -406,12 +397,23 @@ impl<S: Sink> Context<'_, S> {
                 parse::Type::Bool => Ok(Type::Bool),
                 parse::Type::List => Ok(Type::List),
                 parse::Type::Mat => Ok(Type::Mat),
-                parse::Type::Of(expr) => {
-                    let (typ, _) = type_check.eval(expr, Local::default())?;
-                    Ok(typ)
-                }
+                parse::Type::Of(expr) => self.type_check(expr),
             })
             .collect()
+    }
+
+    fn type_check(&mut self, expr: &Located<parse::Expr>) -> Semantic<Type> {
+        let mut context = Context {
+            scope: SymbolTable {
+                outer: Some(&self.scope),
+                symbols: Default::default(),
+            },
+
+            sink: TypeCheck,
+        };
+
+        let (typ, _) = context.eval(expr, Local::default())?;
+        Ok(typ)
     }
 
     fn eval_expecting(
@@ -461,7 +463,7 @@ impl<S: Sink> Context<'_, S> {
 
                     _ => {
                         return Err(Located::at(
-                            SemanticError::ExpectedListOrMat(arg_type),
+                            SemanticError::ExpectedOneOfTwo(Type::List, Type::Mat, arg_type),
                             expr.location().clone(),
                         ))
                     }
@@ -476,7 +478,90 @@ impl<S: Sink> Context<'_, S> {
                 Ok((arg_type, arg_ownership, (Type::Int, Owned)))
             }),
 
+            List(items) => {
+                let typ = self.build_sequence(into, &items)?;
+                Ok((typ, Owned))
+            }
+
             _ => todo!(),
+        }
+    }
+
+    fn build_sequence(&mut self, into: Local, items: &[Located<parse::Expr>]) -> Semantic<Type> {
+        let item = self.sink.alloc_local();
+
+        let is_mat = match items.first() {
+            None => false,
+
+            Some(first) => match self.type_check(first)? {
+                Type::Bool => false,
+                Type::List => true,
+
+                bad => {
+                    return Err(Located::at(
+                        SemanticError::ExpectedOneOfTwo(Type::Bool, Type::List, bad),
+                        first.location().clone(),
+                    ))
+                }
+            },
+        };
+
+        let constructor = if is_mat {
+            "builtin_new_mat"
+        } else {
+            "builtin_new_list"
+        };
+
+        self.sink.push(Instruction::Call {
+            target: Function::External(constructor),
+            arguments: Vec::new(),
+            output: Some(into),
+        });
+
+        let zero = if is_mat {
+            let zero = self.sink.alloc_local();
+            self.sink.push(Instruction::LoadConst(0, zero));
+
+            Some(zero)
+        } else {
+            None
+        };
+
+        let index = self.sink.alloc_local();
+        for (i, expr) in items.iter().enumerate() {
+            self.sink.push(Instruction::LoadConst(i as i32, index));
+
+            let (insert, expected, arguments) = if is_mat {
+                (
+                    "builtin_insert_mat",
+                    Type::List,
+                    vec![item, zero.unwrap(), index],
+                )
+            } else {
+                ("builtin_insert_list", Type::Bool, vec![index, item])
+            };
+
+            let ownership = self.eval_expecting(expr, item, expected)?;
+            self.sink.push(Instruction::Call {
+                target: Function::External(insert),
+                arguments,
+                output: None,
+            });
+
+            self.drop(item, expected, ownership);
+        }
+
+        if let Some(zero) = zero {
+            self.sink.free_local(zero);
+        }
+
+        self.sink.free_local(index);
+        self.sink.free_local(item);
+
+        if is_mat {
+            Ok(Type::Mat)
+        } else {
+            Ok(Type::List)
         }
     }
 
