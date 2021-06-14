@@ -181,6 +181,9 @@ pub enum SemanticError {
 
     #[error("Redefinition of procedure `{0}` with the same parameter types")]
     SignatureClash(Identifier),
+
+    #[error("Parameter `{0}` is bound more than once")]
+    RepeatedParameter(Identifier),
 }
 
 impl parse::Ast {
@@ -307,8 +310,29 @@ impl<S: Sink> Context<'_, S> {
     fn scan_procedure(&mut self, procedure: &parse::Procedure) -> Semantic<Rc<String>> {
         let types = self.parameter_types(procedure)?;
 
-        match self.scope.symbols.get(procedure.name().as_ref()) {
-            Some(Named::Procs { variants }) => Ok(variants.get(&types).unwrap().clone()),
+        self.subscope(|this| {
+            let parameters = procedure.parameters().iter();
+            for (i, (parameter, typ)) in parameters.zip(types.iter().copied()).enumerate() {
+                let name = parameter.name();
+                let var = Named::Var(Variable {
+                    access: Access::Local(Local(i as u32)),
+                    typ,
+                });
+
+                let id = name.as_ref().clone();
+                if this.scope.symbols.insert(id, var).is_some() {
+                    return Err(Located::at(
+                        SemanticError::RepeatedParameter(name.as_ref().clone()),
+                        name.location().clone(),
+                    ));
+                }
+            }
+
+            Ok(())
+        })?;
+
+        match self.scope.lookup(procedure.name()) {
+            Ok(Named::Procs { variants }) => Ok(variants.get(&types).unwrap().clone()),
             _ => unreachable!(),
         }
     }
@@ -414,10 +438,29 @@ impl<S: Sink> Context<'_, S> {
         Ok((var.typ, Ownership::Borrowed))
     }
 
+    fn subscope<F, R>(&mut self, callback: F) -> R
+    where
+        F: FnOnce(&mut Context<'_, S>) -> R,
+    {
+        let sink = std::mem::take(&mut self.sink);
+        let mut subcontext = Context {
+            scope: SymbolTable {
+                outer: Some(&self.scope),
+                symbols: Default::default(),
+            },
+
+            sink,
+        };
+
+        let result = callback(&mut subcontext);
+        self.sink = subcontext.sink;
+
+        result
+    }
+
     fn ephemeral<F, R>(&mut self, callback: F) -> Semantic<R>
     where
         F: FnOnce(&mut Self, Local) -> Semantic<(Type, Ownership, R)>,
-        R: 'static,
     {
         let local = self.sink.alloc_local();
 
