@@ -13,12 +13,32 @@ pub trait LocatedError: sealed::Sealed {
     fn location(&self) -> &Location;
 }
 
-#[derive(Default)]
-pub struct Diagnostics(Vec<Box<dyn 'static + LocatedError>>);
+pub struct Diagnostics {
+    kind: &'static str,
+    errors: Vec<Box<dyn 'static + LocatedError>>,
+}
+
+impl Diagnostics {
+    pub fn kind(self, kind: &'static str) -> Self {
+        Diagnostics { kind, ..self }
+    }
+}
+
+impl Default for Diagnostics {
+    fn default() -> Self {
+        Diagnostics {
+            kind: "error",
+            errors: Default::default(),
+        }
+    }
+}
 
 impl<E: 'static + LocatedError> From<E> for Diagnostics {
     fn from(error: E) -> Self {
-        Diagnostics(vec![Box::new(error)])
+        Diagnostics {
+            errors: vec![Box::new(error)],
+            ..Default::default()
+        }
     }
 }
 
@@ -32,19 +52,23 @@ impl<E: 'static + LocatedError> From<Vec<E>> for Diagnostics {
             })
             .collect();
 
-        Diagnostics(errors)
+        Diagnostics {
+            errors,
+            ..Default::default()
+        }
     }
 }
 
 impl Display for Diagnostics {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let Diagnostics(errors) = self;
+        let Diagnostics { kind, errors } = self;
+
         if errors.is_empty() {
             return writeln!(fmt, "No errors were reported");
         }
 
         for error in errors {
-            writeln!(fmt, "error: {}", error.source())?;
+            writeln!(fmt, "{}: {}", kind, error.source())?;
 
             let location = error.location();
             writeln!(fmt, " --> {}", location)?;
