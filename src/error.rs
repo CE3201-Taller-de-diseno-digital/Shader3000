@@ -94,7 +94,7 @@ impl<E: Error> sealed::Sealed for Located<E> {}
 
 impl<E: Error> LocatedError for Located<E> {
     fn source(&self) -> &dyn Error {
-        self.val()
+        self.as_ref()
     }
 
     fn location(&self) -> &Location {

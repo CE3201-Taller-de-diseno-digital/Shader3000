@@ -1,5 +1,3 @@
-//! Análisis sintáctico.
-
 use std::{iter::Peekable, marker::PhantomData};
 use thiserror::Error;
 
@@ -9,7 +7,20 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub struct Ast(Vec<Procedure>);
+pub struct Ast {
+    procedures: Vec<Procedure>,
+    eof: Location,
+}
+
+impl Ast {
+    pub fn iter(&self) -> impl Iterator<Item = &Procedure> {
+        self.procedures.iter()
+    }
+
+    pub fn eof(&self) -> &Location {
+        &self.eof
+    }
+}
 
 #[derive(Debug)]
 pub struct Procedure {
@@ -18,10 +29,34 @@ pub struct Procedure {
     statements: Vec<Statement>,
 }
 
+impl Procedure {
+    pub fn name(&self) -> &Located<Identifier> {
+        &self.name
+    }
+
+    pub fn parameters(&self) -> &[Parameter] {
+        &self.parameters
+    }
+
+    pub fn statements(&self) -> &[Statement] {
+        &self.statements
+    }
+}
+
 #[derive(Debug)]
 pub struct Parameter {
     name: Located<Identifier>,
     of: Located<Type>,
+}
+
+impl Parameter {
+    pub fn name(&self) -> &Located<Identifier> {
+        &self.name
+    }
+
+    pub fn of(&self) -> &Located<Type> {
+        &self.of
+    }
 }
 
 #[derive(Debug)]
@@ -148,6 +183,16 @@ pub struct Target {
     indices: Vec<Located<Index>>,
 }
 
+impl Target {
+    pub fn var(&self) -> &Located<Identifier> {
+        &self.variable
+    }
+
+    pub fn indices(&self) -> &[Located<Index>] {
+        &self.indices
+    }
+}
+
 #[derive(Debug)]
 pub enum Index {
     Direct(Selector),
@@ -172,10 +217,10 @@ pub enum ParserError {
     #[error("Expected {0}, no token was found instead")]
     MissingToken(Token),
 
-    #[error("Expected identifier")]
-    ExpectedId,
+    #[error("Expected identifier, found {0}")]
+    ExpectedId(Token),
 
-    #[error("Expected any of `if`, `for`, `call`, assignment or method call")]
+    #[error("Expected any of `if`, `for`, `call`, assignment, method call or built-in call")]
     ExpectedStatement,
 
     #[error("Expected any of `int`, `bool`, `list`")]
@@ -203,7 +248,7 @@ pub fn parse<'a, T>(tokens: T, empty_location: Location) -> Result<Ast, Located<
 where
     T: TokenStream<'a>,
 {
-    let mut parser = Parser {
+    let parser = Parser {
         tokens: tokens.peekable(),
         last_known: empty_location,
         lifetime_hack: PhantomData,
@@ -333,13 +378,16 @@ impl<T> ParseExt for Parse<T> {
 }
 
 impl<'a, I: TokenStream<'a>> Parser<'a, I> {
-    fn program(&mut self) -> Parse<Ast> {
+    fn program(mut self) -> Parse<Ast> {
         let mut procedures = Vec::new();
         while self.tokens.peek().is_some() {
             procedures.push(self.procedure()?);
         }
 
-        Ok(Ast(procedures))
+        Ok(Ast {
+            procedures,
+            eof: self.last_known,
+        })
     }
 
     fn procedure(&mut self) -> Parse<Procedure> {
@@ -855,7 +903,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
         let (location, token) = self.next()?.split();
         match token {
             Token::Id(id) => Ok(Located::at(id, location)),
-            _ => self.fail(ParserError::ExpectedId),
+            _ => self.fail(ParserError::ExpectedId(token)),
         }
     }
 

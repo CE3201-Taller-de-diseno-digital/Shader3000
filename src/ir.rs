@@ -28,30 +28,37 @@
 use std::rc::Rc;
 
 /// Un programa en representación intermedia.
+#[derive(Debug)]
 pub struct Program {
-    pub globals: Vec<Rc<Global>>,
-    pub code: Vec<Rc<Function>>,
+    pub globals: Vec<Global>,
+    pub code: Vec<GeneratedFunction>,
 }
 
-/// Un objeto invocable con un símbolo conocido. Las funciones
-/// pueden ser generadas o ser implementadas externamente y
-/// encontradas durante la fase de enlazado.
-pub struct Function {
-    pub name: String,
-    pub body: FunctionBody,
+#[derive(Clone, Debug)]
+pub enum Function {
+    External(&'static str),
+    Generated(Rc<String>),
+}
+
+impl Function {
+    pub fn name(&self) -> &str {
+        match self {
+            Function::External(name) => name,
+            Function::Generated(name) => &name,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct GeneratedFunction {
+    pub name: Rc<String>,
+    pub body: Vec<Instruction>,
     pub parameters: u32,
-}
-
-/// El cuerpo de una función puede ser desconocido (externo)
-/// o conformarse por una secuencia de instrucciones de IR.
-pub enum FunctionBody {
-    External,
-    Generated(Vec<Instruction>),
 }
 
 /// Las etiquetas están constituidas por identificadores arbitrarios,
 /// no necesariamente secuenciales pero sí únicos.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Label(pub u32);
 
 /// Las locales se identifican por índices secuenciales.
@@ -59,10 +66,27 @@ pub struct Label(pub u32);
 pub struct Local(pub u32);
 
 /// Una variable global se identifica únicamente por su símbolo.
-pub struct Global(pub String);
+#[derive(Clone, Debug)]
+pub struct Global(Rc<String>);
+
+impl AsRef<str> for Global {
+    fn as_ref(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+impl<S: Into<String>> From<S> for Global {
+    fn from(string: S) -> Self {
+        Global(Rc::new(string.into()))
+    }
+}
 
 /// Una instrucción de representación intermedia.
+#[derive(Debug)]
 pub enum Instruction {
+    /// Copia contenidos de una local a otra.
+    Move(Local, Local),
+
     /// Establecer la ubicación de una etiqueta al punto donde ocurre
     /// esta instrucción la secuencia del programa.
     SetLabel(Label),
@@ -78,17 +102,17 @@ pub enum Instruction {
     LoadConst(i32, Local),
 
     /// Copiar los contenidos de una variable global a una local.
-    LoadGlobal(Rc<Global>, Local),
+    LoadGlobal(Global, Local),
 
     /// Copiar los contenidos de una local a una variable global.
-    StoreGlobal(Local, Rc<Global>),
+    StoreGlobal(Local, Global),
 
     /// Llamar a una función, copiando los argumentos de las locales
     /// indicadas para ese efecto. Opcionalmente, el valor de retorno
     /// de la función se escribe a una local. Los contenidos de locales
     /// se preservan tras llamadas a funciones arbitrarias.
     Call {
-        target: Rc<Function>,
+        target: Function,
         arguments: Vec<Local>,
         output: Option<Local>,
     },

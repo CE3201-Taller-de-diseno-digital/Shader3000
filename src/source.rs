@@ -11,7 +11,7 @@ use std::{
     fmt::{self, Debug, Display, Formatter},
     io::{self, BufRead},
     iter,
-    ops::Range,
+    ops::{Deref, DerefMut, Range},
     rc::Rc,
 };
 
@@ -26,11 +26,6 @@ pub struct Located<T> {
 }
 
 impl<T> Located<T> {
-    /// Obtiene el valor.
-    pub fn val(&self) -> &T {
-        &self.value
-    }
-
     /// Obtiene la ubicación.
     pub fn location(&self) -> &Location {
         &self.location
@@ -66,6 +61,20 @@ impl<T> Located<T> {
 impl<T> AsRef<T> for Located<T> {
     fn as_ref(&self) -> &T {
         &self.value
+    }
+}
+
+impl<T> Deref for Located<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl<T> DerefMut for Located<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.value
     }
 }
 

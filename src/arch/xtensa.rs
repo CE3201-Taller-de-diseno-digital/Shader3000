@@ -139,14 +139,14 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
         emit!(self.cx, "movi", "{}, {}", reg, value)
     }
 
-    fn load_global(&mut self, Global(global): &Global, reg: Reg) -> io::Result<()> {
-        emit!(self.cx, "movi", "{}, {}", reg, global)?;
+    fn load_global(&mut self, global: &Global, reg: Reg) -> io::Result<()> {
+        emit!(self.cx, "movi", "{}, {}", reg, global.as_ref())?;
         emit!(self.cx, "l32i", "{0}, {0}, 0", reg)
     }
 
-    fn store_global(&mut self, reg: Reg, Global(global): &Global) -> io::Result<()> {
+    fn store_global(&mut self, reg: Reg, global: &Global) -> io::Result<()> {
         let scratch = self.cx.scratch(&mut self.regs, &[reg])?;
-        emit!(self.cx, "movi", "{}, {}", scratch, global)?;
+        emit!(self.cx, "movi", "{}, {}", scratch, global.as_ref())?;
         emit!(self.cx, "s32i", "{}, {}, 0", reg, scratch)
     }
 
@@ -168,7 +168,7 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
     }
 
     fn call(&mut self, target: &Function, _call_info: ()) -> io::Result<()> {
-        emit!(self.cx, "call0", "{}", target.name)
+        emit!(self.cx, "call0", "{}", target.name())
     }
 
     fn reg_to_local(cx: &Context<'a, Self>, reg: Reg, local: Local) -> io::Result<()> {

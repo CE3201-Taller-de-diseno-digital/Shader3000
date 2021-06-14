@@ -111,7 +111,9 @@ impl<'a, E: Emitter<'a>> Context<'a, E> {
         let overwrite = match &mut slot.entry {
             Some(entry) if entry.local == local => false,
             Some(entry) => {
-                E::reg_to_local(self, reg, entry.local)?;
+                if entry.dirty {
+                    E::reg_to_local(self, reg, entry.local)?;
+                }
 
                 *entry = Entry {
                     local,
@@ -201,7 +203,11 @@ impl<'a, E: Emitter<'a>> Context<'a, E> {
                 .min_by_key(|slot| slot.entry.as_ref().unwrap().sequence)
                 .expect("register file exhaustion");
 
-            E::reg_to_local(self, slot.reg, slot.entry.as_ref().unwrap().local)?;
+            let entry = slot.entry.as_ref().unwrap();
+            if entry.dirty {
+                E::reg_to_local(self, slot.reg, entry.local)?;
+            }
+
             Ok(slot)
         }
     }

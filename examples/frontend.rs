@@ -15,8 +15,16 @@ fn main() {
             match parse::parse(tokens.iter(), start) {
                 Err(error) => Diagnostics::from(error),
                 Ok(ast) => {
-                    println!("{:#?}", ast);
-                    Diagnostics::default()
+                    print!("Ast: {:#?}\n\n", ast);
+
+                    match ast.resolve() {
+                        Err(error) => Diagnostics::from(error),
+
+                        Ok(ir) => {
+                            println!("IR: {:#?}", ir);
+                            Diagnostics::default()
+                        }
+                    }
                 }
             }
         }

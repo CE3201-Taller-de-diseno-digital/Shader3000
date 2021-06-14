@@ -1,23 +1,22 @@
 //! Editor de código
-//! 
+//!
 //! Esta es una implementación sencilla de un editor
 //! de código especializado para el lenguaje creado,
 //! utilizando crates que adaptan GTK y su sourceview
 //! para rust.
 //!  
 //! El editor cuenta con funcionalidades de lectura,
-//! apertura y creacion de archivos, guardado automático 
+//! apertura y creacion de archivos, guardado automático
 //! (a la hora de cerrar un archivo o compilarlo),
-//! guardado manual y sobrescritura de archivos, 
+//! guardado manual y sobrescritura de archivos,
 //! syntax highlight para código del lenguaje
 //! creado , compilación y ejecución automáticas
-//! y una terminal para desplegar errores de 
+//! y una terminal para desplegar errores de
 //! compilación y otra información revelante.
-//! 
+//!
 //! Además cuenta con diferentes estilos para
 //! la intefaz. Y un botón de about que muestra
 //! información adicional.
-
 
 extern crate gio;
 extern crate glib;
@@ -53,7 +52,7 @@ fn main() {
 /// Función build_ui
 /// Esta función se encarga de crear elementos gráficos,
 /// obtener elementos graficos del archivo .glade y
-/// de dar la funcionalidad respectiva a cada 
+/// de dar la funcionalidad respectiva a cada
 /// uno de los botones disponibles.
 fn build_ui(application: &gtk::Application) {
     //               ____________________
@@ -110,7 +109,7 @@ fn build_ui(application: &gtk::Application) {
             .unwrap(),
     );
 
-        //Set sourceview proprieties 
+    //Set sourceview proprieties
     buffer.set_highlight_syntax(true);
     let sourceview = sourceview::View::new_with_buffer(&buffer);
     sourceview.set_auto_indent(true);
@@ -137,7 +136,7 @@ fn build_ui(application: &gtk::Application) {
     //______________/  Add funtionality
 
     // Add "compile" button functionality
-    // 
+    //
     // Guardado automático
     // Envio de archivo al compilador
     // Despliegue de mensajes del compilador en la terminal
@@ -166,7 +165,7 @@ fn build_ui(application: &gtk::Application) {
     );
 
     // Add "compile and run" button functionality
-    // 
+    //
     // Ejecutar compile primero
     // Flasheo del código compilado
     // Despliegue de mensajes en la terminal
@@ -184,7 +183,7 @@ fn build_ui(application: &gtk::Application) {
     }));
 
     // Add "new" button functionality
-    // 
+    //
     // Guardado automático
     // Limpieza de buffer de texto
     // Cambio de ruta de guardado y nombre de archivo
@@ -210,7 +209,7 @@ fn build_ui(application: &gtk::Application) {
     let current_file_open = current_file.clone();
 
     // Add "open" button functionality
-    // 
+    //
     // Abrir el seleccionardor de archivos
     // Guardado automático
     // Lectura de archivo y despligue en buffer de texto
@@ -264,7 +263,7 @@ fn build_ui(application: &gtk::Application) {
     let src_view_save = sourceview.clone();
 
     // Add "save" button functionality
-    // 
+    //
     // Tomar ruta de guardado actual
     // Tomar texto actual del buffer
     // Escribir bytes a la ruta especificada
@@ -307,7 +306,7 @@ fn build_ui(application: &gtk::Application) {
     let current_file_as = current_file.clone();
 
     // Add "save as" button functionality
-    // 
+    //
     // Abrir seleccionador de archivos
     // Tomar ruta y nombre seleccionados
     // Tomar texto actual del buffer
@@ -367,9 +366,8 @@ fn build_ui(application: &gtk::Application) {
         file_chooser.show_all();
     }));
 
-
     // Add themes button functionality
-    // 
+    //
     // Cambia el esquema de colores del buffer segun lo seleccionado
     themes.connect_property_style_scheme_notify(clone!(@weak buffer, @weak themes => move |_| {
 
@@ -379,14 +377,14 @@ fn build_ui(application: &gtk::Application) {
     }));
 
     // Add "about" button funtionality
-    // 
+    //
     // Abre la ventana de about
     about.connect_activate(move |_| {
         about_win.show_all();
     });
 
     // Add "quit" button funtionality
-    // 
+    //
     // Cierra ventana
     quit.connect_activate(clone!(@weak window , @weak save => move |_| {
 
@@ -396,11 +394,11 @@ fn build_ui(application: &gtk::Application) {
 
     window.show_all();
 
-    // When window destroyed 
-    // 
+    // When window destroyed
+    //
     // Guarda el archivo
     // Detiene el ciclo principal de GTK
-    window.connect_delete_event(move|_, _| {
+    window.connect_delete_event(move |_, _| {
         save.activate();
         gtk::main_quit();
         Inhibit(false)

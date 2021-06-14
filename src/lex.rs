@@ -44,6 +44,9 @@ pub use unicase::Ascii as NoCase;
 /// Límite de longitud de identificadores.
 const MAX_ID_LENGTH: usize = 10;
 
+/// Literal entero máximo.
+const INT_MAX: i32 = i32::MAX;
+
 /// Error de escaneo.
 #[non_exhaustive]
 #[derive(Error, Debug)]
@@ -71,13 +74,29 @@ pub enum LexerError {
     /// Un identificador excede el límite de longitud.
     #[error("Identifier exceeds {MAX_ID_LENGTH} characters")]
     IdTooLong,
+
+    /// Una constante entera se encuentra fuera de rango.
+    #[error("Integer literal overflow, valid range is [0, {INT_MAX}]")]
+    IntOverflow,
 }
 
 /// Un identificador.
 ///
 /// Los identificadores cumplen ciertas reglas de contenido y longitud.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Identifier(Rc<NoCase<String>>);
+
+impl AsRef<str> for Identifier {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
+    }
+}
+
+impl Display for Identifier {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.as_ref().fmt(fmt)
+    }
+}
 
 /// Un literal de cadana.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -520,7 +539,15 @@ impl<S: InputStream> Lexer<S> {
 
                 // Acumulación dígito por dígito de constantes enteras
                 (Integer(accumulated), Some(digit)) if digit.is_ascii_digit() => {
-                    *accumulated = *accumulated * 10 + digit.to_digit(10).unwrap() as i32;
+                    let digit = digit.to_digit(10).unwrap() as i32;
+
+                    match accumulated
+                        .checked_mul(10)
+                        .and_then(|n| n.checked_add(digit))
+                    {
+                        Some(result) => *accumulated = result,
+                        None => break Err(LexerError::IntOverflow),
+                    }
                 }
 
                 // Si sigue algo que no es un dígito, la constante a terminado
