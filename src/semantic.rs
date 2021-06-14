@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::{
-    ir::{self, Function, Global, Instruction, Local},
+    ir::{self, Function, Global, Instruction, Label, Local},
     lex::Identifier,
     parse,
     source::Located,
@@ -93,6 +93,8 @@ trait Sink: Default {
     fn alloc_local(&mut self) -> Local;
 
     fn free_local(&mut self, local: Local);
+
+    fn next_label(&mut self) -> Label;
 }
 
 #[derive(Copy, Clone, Default)]
@@ -106,6 +108,10 @@ impl Sink for TypeCheck {
     }
 
     fn free_local(&mut self, _local: Local) {}
+
+    fn next_label(&mut self) -> Label {
+        Label::default()
+    }
 }
 
 #[derive(Default)]
@@ -113,6 +119,7 @@ struct Listing {
     body: Vec<Instruction>,
     free_locals: Vec<Local>,
     next_local: Local,
+    next_label: Label,
 }
 
 impl Listing {
@@ -121,6 +128,7 @@ impl Listing {
             body: Vec::new(),
             free_locals: Vec::new(),
             next_local: Local(parameters),
+            next_label: Label::default(),
         }
     }
 }
@@ -152,6 +160,13 @@ impl Sink for Listing {
         );
 
         self.free_locals.push(local);
+    }
+
+    fn next_label(&mut self) -> Label {
+        let label = self.next_label;
+        self.next_label = Label(label.0 + 1);
+
+        label
     }
 }
 
@@ -330,13 +345,47 @@ impl<S: Sink> Context<'_, S> {
                 }
             }
 
-            Ok(())
+            this.scan_statements(procedure.statements())
         })?;
 
         match self.scope.lookup(procedure.name()) {
             Ok(Named::Procs { variants }) => Ok(variants.get(&types).unwrap().clone()),
             _ => unreachable!(),
         }
+    }
+
+    fn scan_statements(&mut self, statements: &[parse::Statement]) -> Semantic<()> {
+        for statement in statements.iter() {
+            use parse::Statement::*;
+
+            match statement {
+                If { condition, body } => self.scan_conditional(condition, body)?,
+
+                _ => todo!(),
+            }
+        }
+
+        Ok(())
+    }
+
+    fn scan_conditional(
+        &mut self,
+        condition: &Located<parse::Expr>,
+        body: &[parse::Statement],
+    ) -> Semantic<()> {
+        let if_false = self.sink.next_label();
+
+        self.ephemeral(|this, local| {
+            this.eval_expecting(condition, local, Type::Bool)?;
+            this.sink.push(Instruction::JumpIfFalse(local, if_false));
+
+            Ok((Type::Bool, Ownership::Owned, ()))
+        })?;
+
+        self.scan_statements(body)?;
+        self.sink.push(Instruction::SetLabel(if_false));
+
+        Ok(())
     }
 
     fn parameter_types(&mut self, procedure: &parse::Procedure) -> Semantic<Vec<Type>> {
@@ -364,6 +413,23 @@ impl<S: Sink> Context<'_, S> {
             .collect()
     }
 
+    fn eval_expecting(
+        &mut self,
+        expr: &Located<parse::Expr>,
+        into: Local,
+        typ: Type,
+    ) -> Semantic<Ownership> {
+        let (actual, ownership) = self.eval(expr, into)?;
+        if actual == typ {
+            Ok(ownership)
+        } else {
+            Err(Located::at(
+                SemanticError::ExpectedType(typ, actual),
+                expr.location().clone(),
+            ))
+        }
+    }
+
     fn eval(&mut self, expr: &Located<parse::Expr>, into: Local) -> Semantic<(Type, Ownership)> {
         use parse::Expr::*;
         use Ownership::Owned;
@@ -389,11 +455,12 @@ impl<S: Sink> Context<'_, S> {
             Len(expr) => self.ephemeral(|this, arg| {
                 let (arg_type, arg_ownership) = this.eval(expr, arg)?;
                 let target = match arg_type {
-                    Type::List => Function::External("builtin_len"),
+                    Type::List => Function::External("builtin_len_list"),
+                    Type::Mat => Function::External("builtin_len_mat"),
 
                     _ => {
                         return Err(Located::at(
-                            SemanticError::ExpectedType(Type::List, arg_type),
+                            SemanticError::ExpectedListOrMat(arg_type),
                             expr.location().clone(),
                         ))
                     }

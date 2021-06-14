@@ -58,7 +58,7 @@ pub struct GeneratedFunction {
 
 /// Las etiquetas están constituidas por identificadores arbitrarios,
 /// no necesariamente secuenciales pero sí únicos.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct Label(pub u32);
 
 /// Las locales se identifican por índices secuenciales.
