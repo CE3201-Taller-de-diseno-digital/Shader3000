@@ -455,31 +455,13 @@ impl<S: Sink> Context<'_, S> {
 
             Read(target) => self.read(target, into),
 
-            Len(expr) => self.ephemeral(|this, arg| {
-                let (arg_type, arg_ownership) = this.eval(expr, arg)?;
-                let target = match arg_type {
-                    Type::List => Function::External("builtin_len_list"),
-                    Type::Mat => Function::External("builtin_len_mat"),
-
-                    _ => {
-                        return Err(Located::at(
-                            SemanticError::ExpectedOneOfTwo(Type::List, Type::Mat, arg_type),
-                            expr.location().clone(),
-                        ))
-                    }
-                };
-
-                this.sink.push(Instruction::Call {
-                    target,
-                    arguments: vec![arg],
-                    output: Some(into),
-                });
-
-                Ok((arg_type, arg_ownership, (Type::Int, Owned)))
-            }),
+            Len(expr) => {
+                self.scan_len(expr, into)?;
+                Ok((Type::Int, Owned))
+            }
 
             List(items) => {
-                let typ = self.build_sequence(into, &items)?;
+                let typ = self.build_sequence(&items, into)?;
                 Ok((typ, Owned))
             }
 
@@ -487,7 +469,32 @@ impl<S: Sink> Context<'_, S> {
         }
     }
 
-    fn build_sequence(&mut self, into: Local, items: &[Located<parse::Expr>]) -> Semantic<Type> {
+    fn scan_len(&mut self, expr: &Located<parse::Expr>, into: Local) -> Semantic<()> {
+        self.ephemeral(|this, arg| {
+            let (arg_type, arg_ownership) = this.eval(expr, arg)?;
+            let target = match arg_type {
+                Type::List => Function::External("builtin_len_list"),
+                Type::Mat => Function::External("builtin_len_mat"),
+
+                _ => {
+                    return Err(Located::at(
+                        SemanticError::ExpectedOneOfTwo(Type::List, Type::Mat, arg_type),
+                        expr.location().clone(),
+                    ))
+                }
+            };
+
+            this.sink.push(Instruction::Call {
+                target,
+                arguments: vec![arg],
+                output: Some(into),
+            });
+
+            Ok((arg_type, arg_ownership, ()))
+        })
+    }
+
+    fn build_sequence(&mut self, items: &[Located<parse::Expr>], into: Local) -> Semantic<Type> {
         let item = self.sink.alloc_local();
 
         let is_mat = match items.first() {
