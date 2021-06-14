@@ -62,7 +62,7 @@ pub struct GeneratedFunction {
 pub struct Label(pub u32);
 
 /// Las locales se identifican por índices secuenciales.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
 pub struct Local(pub u32);
 
 /// Una variable global se identifica únicamente por su símbolo.

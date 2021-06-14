@@ -14,7 +14,7 @@ use crate::{
 };
 
 struct SymbolTable<'a> {
-    outer: Option<&'a mut SymbolTable<'a>>,
+    outer: Option<&'a SymbolTable<'a>>,
     symbols: HashMap<Identifier, Named>,
 }
 
@@ -28,7 +28,7 @@ impl SymbolTable<'_> {
                 None => match table.outer.as_ref() {
                     Some(outer) => table = outer,
                     None => break None,
-                }
+                },
             }
         };
 
@@ -85,7 +85,7 @@ enum Ownership {
     Borrowed,
 }
 
-trait Sink {
+trait Sink: Default {
     fn push(&mut self, instruction: Instruction);
 
     fn alloc_local(&mut self) -> Local;
@@ -93,18 +93,20 @@ trait Sink {
     fn free_local(&mut self, local: Local);
 }
 
+#[derive(Copy, Clone, Default)]
 struct TypeCheck;
 
 impl Sink for TypeCheck {
     fn push(&mut self, _instruction: Instruction) {}
 
     fn alloc_local(&mut self) -> Local {
-        Local(42)
+        Local::default()
     }
 
     fn free_local(&mut self, _local: Local) {}
 }
 
+#[derive(Default)]
 struct Listing {
     body: Vec<Instruction>,
     free_locals: Vec<Local>,
@@ -183,23 +185,25 @@ pub enum SemanticError {
 
 impl parse::Ast {
     pub fn resolve(self) -> Semantic<ir::Program> {
-        let mut global_scope = self.scan_global_scope()?;
+        let global_scope = self.scan_global_scope()?;
 
         let code = self
             .iter()
             .map(|procedure| {
                 let parameters = procedure.parameters().len() as u32;
-
-                let mut listing = Listing::for_parameters(parameters);
                 let mut context = Context {
-                    scope: &mut global_scope,
-                    sink: &mut listing,
+                    scope: SymbolTable {
+                        outer: Some(&global_scope),
+                        symbols: Default::default(),
+                    },
+
+                    sink: Listing::for_parameters(parameters),
                 };
 
                 let symbol = context.scan_procedure(procedure)?;
                 Ok(ir::GeneratedFunction {
                     name: symbol,
-                    body: listing.body,
+                    body: context.sink.body,
                     parameters,
                 })
             })
@@ -221,7 +225,7 @@ impl parse::Ast {
         Ok(ir::Program { code, globals })
     }
 
-    fn scan_global_scope(&self) -> Semantic<SymbolTable<'static>> {
+    fn scan_global_scope(&self) -> Semantic<SymbolTable<'_>> {
         let main = self
             .iter()
             .find(|proc| {
@@ -230,14 +234,13 @@ impl parse::Ast {
             })
             .ok_or_else(|| Located::at(SemanticError::NoMain, self.eof().clone()))?;
 
-        let mut globals = SymbolTable {
-            outer: None,
-            symbols: HashMap::new(),
-        };
-
         let mut context = Context {
-            scope: &mut globals,
-            sink: &mut TypeCheck,
+            scope: SymbolTable {
+                outer: None,
+                symbols: Default::default(),
+            },
+
+            sink: TypeCheck,
         };
 
         let mut statements = main.statements().iter();
@@ -247,7 +250,7 @@ impl parse::Ast {
                 let id = target.var().as_ref();
                 if context.scope.symbols.get(id).is_none() && target.indices().is_empty() {
                     // Esto solo verifica e infiere tipos, todavía no se genera IR
-                    let (typ, _) = context.eval(value, Local(42))?;
+                    let (typ, _) = context.eval(value, Local::default())?;
 
                     let var = Variable {
                         access: Access::Global(Global::from(mangle(id, &[]))),
@@ -290,16 +293,17 @@ impl parse::Ast {
             }
         }
 
+        let globals = context.scope;
         Ok(globals)
     }
 }
 
-struct Context<'b, 'a: 'b, S: Sink> {
-    scope: &'b mut SymbolTable<'a>,
-    sink: &'b mut S,
+struct Context<'a, S: Sink> {
+    scope: SymbolTable<'a>,
+    sink: S,
 }
 
-impl<S: Sink> Context<'_, 'static, S> {
+impl<S: Sink> Context<'_, S> {
     fn scan_procedure(&mut self, procedure: &parse::Procedure) -> Semantic<Rc<String>> {
         let types = self.parameter_types(procedure)?;
 
@@ -311,8 +315,12 @@ impl<S: Sink> Context<'_, 'static, S> {
 
     fn parameter_types(&mut self, procedure: &parse::Procedure) -> Semantic<Vec<Type>> {
         let mut type_check = Context {
-            scope: self.scope,
-            sink: &mut TypeCheck,
+            scope: SymbolTable {
+                outer: Some(&mut self.scope),
+                symbols: Default::default(),
+            },
+
+            sink: TypeCheck,
         };
 
         procedure
@@ -323,15 +331,13 @@ impl<S: Sink> Context<'_, 'static, S> {
                 parse::Type::Bool => Ok(Type::Bool),
                 parse::Type::List => Ok(Type::List),
                 parse::Type::Of(expr) => {
-                    let (typ, _) = type_check.eval(expr, Local(42))?;
+                    let (typ, _) = type_check.eval(expr, Local::default())?;
                     Ok(typ)
                 }
             })
             .collect()
     }
-}
 
-impl<S: Sink> Context<'_, '_, S> {
     fn eval(&mut self, expr: &Located<parse::Expr>, into: Local) -> Semantic<(Type, Ownership)> {
         use parse::Expr::*;
         use Ownership::Owned;
