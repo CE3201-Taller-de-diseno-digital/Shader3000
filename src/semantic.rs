@@ -405,6 +405,7 @@ impl<S: Sink> Context<'_, S> {
                 parse::Type::Int => Ok(Type::Int),
                 parse::Type::Bool => Ok(Type::Bool),
                 parse::Type::List => Ok(Type::List),
+                parse::Type::Mat => Ok(Type::Mat),
                 parse::Type::Of(expr) => {
                     let (typ, _) = type_check.eval(expr, Local::default())?;
                     Ok(typ)

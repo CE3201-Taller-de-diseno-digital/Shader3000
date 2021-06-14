@@ -64,6 +64,7 @@ pub enum Type {
     Int,
     Bool,
     List,
+    Mat,
     Of(Located<Expr>),
 }
 
@@ -223,7 +224,7 @@ pub enum ParserError {
     #[error("Expected any of `if`, `for`, `call`, assignment, method call or built-in call")]
     ExpectedStatement,
 
-    #[error("Expected any of `int`, `bool`, `list`")]
+    #[error("Expected any of `int`, `bool`, `list`, `mat`")]
     ExpectedType,
 
     #[error("Expected expression, found {0}")]
@@ -732,6 +733,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
             Token::Keyword(Keyword::Int) => Type::Int,
             Token::Keyword(Keyword::Bool) => Type::Bool,
             Token::Keyword(Keyword::List) => Type::List,
+            Token::Keyword(Keyword::Mat) => Type::Mat,
             Token::Keyword(Keyword::Type) => {
                 self.expect(Token::OpenParen)?;
                 let expr = self.expr().strict()?;
