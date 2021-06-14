@@ -145,6 +145,7 @@ pub enum Expr {
     Integer(i32),
     Read(Target),
     Len(Box<Located<Expr>>),
+    Range(Box<Located<Expr>>, Box<Located<Expr>>),
     List(Vec<Located<Expr>>),
     Negate(Box<Located<Expr>>),
     Binary {
@@ -774,12 +775,28 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
                 self.expect(Token::OpenParen)?;
 
                 let inner = self.expr().strict()?;
-
                 self.expect(Token::CloseParen)?;
-                (
-                    Expr::Len(Box::new(inner)),
-                    Location::span(start, &self.last_known),
-                )
+
+                let call = Expr::Len(Box::new(inner));
+                let location = Location::span(start, &self.last_known);
+
+                (call, location)
+            }
+
+            Token::Keyword(Keyword::Range) => {
+                let (start, _) = self.next()?.split();
+                self.expect(Token::OpenParen)?;
+
+                let first = self.expr().strict()?;
+                self.expect(Token::Comma)?;
+
+                let second = self.expr().strict()?;
+                self.expect(Token::CloseParen)?;
+
+                let call = Expr::Range(Box::new(first), Box::new(second));
+                let location = Location::span(start, &self.last_known);
+
+                (call, location)
             }
 
             Token::Minus => {
