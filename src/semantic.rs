@@ -70,12 +70,14 @@ pub enum Type {
 
 impl Display for Type {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Type::Int => fmt.write_str("int"),
-            Type::Bool => fmt.write_str("bool"),
-            Type::List => fmt.write_str("list"),
-            Type::Mat => fmt.write_str("mat"),
-        }
+        let string = match self {
+            Type::Int => "int",
+            Type::Bool => "bool",
+            Type::List => "list",
+            Type::Mat => "mat",
+        };
+
+        fmt.write_str(string)
     }
 }
 
@@ -438,6 +440,24 @@ impl<S: Sink> Context<'_, S> {
         Ok((var.typ, Ownership::Borrowed))
     }
 
+    fn expire(mut self) -> S {
+        std::mem::take(&mut self.scope.symbols)
+            .into_iter()
+            .for_each(|(_, named)| match named {
+                Named::Var(Variable {
+                    access: Access::Local(local),
+                    typ,
+                }) => {
+                    self.drop(local, typ, Ownership::Owned);
+                    self.sink.free_local(local);
+                }
+
+                _ => (),
+            });
+
+        self.sink
+    }
+
     fn subscope<F, R>(&mut self, callback: F) -> R
     where
         F: FnOnce(&mut Context<'_, S>) -> R,
@@ -453,7 +473,7 @@ impl<S: Sink> Context<'_, S> {
         };
 
         let result = callback(&mut subcontext);
-        self.sink = subcontext.sink;
+        self.sink = subcontext.expire();
 
         result
     }
