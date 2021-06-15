@@ -316,7 +316,7 @@ impl<'a> Emitter<'a> {
 
         emit!(self.cx, "mov", "{}, %rax", location(lhs))?;
         emit!(self.cx, "cqo")?;
-        emit!(self.cx, "idiv", "{}", location(rhs))?;
+        emit!(self.cx, "idivq", "{}", location(rhs))?;
 
         let result = match mode {
             Division::Quotient => Reg::Rax,
