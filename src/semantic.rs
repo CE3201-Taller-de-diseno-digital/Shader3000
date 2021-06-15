@@ -10,7 +10,7 @@ use crate::{
     ir::{self, Function, Global, Instruction, Label, Local},
     lex::Identifier,
     parse,
-    source::Located,
+    source::{Located, Location},
 };
 
 struct SymbolTable<'a> {
@@ -214,6 +214,9 @@ pub enum SemanticError {
     #[error("Invalid operands for `{0}`: `{1}` and `{1}`")]
     InvalidOperands(parse::BinOp, Type),
 
+    #[error("Expected {0} arguments, found {1}")]
+    BadArgumentCount(usize, usize),
+
     #[error("Floats are not supported by this implementation")]
     Floats,
 }
@@ -371,10 +374,11 @@ impl<S: Sink> Context<'_, S> {
 
     fn scan_statements(&mut self, statements: &[parse::Statement]) -> Semantic<()> {
         for statement in statements.iter() {
-            use parse::Statement::*;
+            use parse::{ObjectKind::*, Statement::*, TimeUnit::*};
 
             match statement {
                 If { condition, body } => self.scan_conditional(condition, body)?,
+
                 For {
                     variable,
                     iterable,
@@ -385,6 +389,62 @@ impl<S: Sink> Context<'_, S> {
                 }
 
                 UserCall { procedure, args } => self.scan_user_call(procedure, args)?,
+
+                Blink {
+                    column,
+                    row,
+                    count,
+                    unit,
+                    state,
+                } => {
+                    let builtin = match unit {
+                        Millis => "builtin_blink_mil",
+                        Seconds => "builtin_blink_seg",
+                        Minutes => "builtin_blink_min",
+                    };
+
+                    let args = [column, row, count, state];
+                    let types = [Type::Int, Type::Int, Type::Int, Type::Bool];
+                    self.eval_fixed_call(builtin, state.location(), &args, &types, None)?;
+                }
+
+                Delay { count, unit } => {
+                    let builtin = match unit {
+                        Millis => "builtin_delay_mil",
+                        Seconds => "builtin_delay_seg",
+                        Minutes => "builtin_delay_min",
+                    };
+
+                    self.eval_fixed_call(builtin, count.location(), &[count], &[Type::Int], None)?;
+                }
+
+                PrintLed { column, row, value } => {
+                    let args = [column, row, value];
+                    let types = [Type::Int, Type::Int, Type::Bool];
+                    self.eval_fixed_call(
+                        "builtin_printled",
+                        value.location(),
+                        &args,
+                        &types,
+                        None,
+                    )?;
+                }
+
+                PrintLedX {
+                    kind,
+                    index,
+                    object,
+                } => {
+                    let (builtin, object_type) = match kind {
+                        Column => ("builtin_printledx_c", Type::List),
+                        Row => ("builtin_printledx_f", Type::List),
+                        Matrix => ("builtin_printledx_m", Type::Mat),
+                    };
+
+                    let args = [index, object];
+                    let types = [Type::Int, object_type];
+                    self.eval_fixed_call(builtin, object.location(), &args, &types, None)?;
+                }
 
                 _ => todo!(),
             }
@@ -558,6 +618,51 @@ impl<S: Sink> Context<'_, S> {
         Ok(typ)
     }
 
+    fn eval_fixed_call(
+        &mut self,
+        builtin: &'static str,
+        at: &Location,
+        args: &[&Located<parse::Expr>],
+        types: &[Type],
+        output: Option<Local>,
+    ) -> Semantic<()> {
+        if args.len() != types.len() {
+            return Err(Located::at(
+                SemanticError::BadArgumentCount(types.len(), args.len()),
+                at.clone(),
+            ));
+        }
+
+        let mut arg_locals = Vec::new();
+        let mut ownerships = Vec::new();
+
+        for (arg, typ) in args.iter().copied().zip(types.iter()) {
+            let local = self.sink.alloc_local();
+            let ownership = self.eval_expecting(arg, local, *typ)?;
+
+            arg_locals.push(local);
+            ownerships.push(ownership);
+        }
+
+        self.sink.push(Instruction::Call {
+            target: Function::External(builtin),
+            arguments: arg_locals.clone(),
+            output,
+        });
+
+        let dropped = arg_locals
+            .into_iter()
+            .zip(ownerships.into_iter())
+            .zip(types.iter().cloned());
+
+        for ((local, ownership), typ) in dropped {
+            self.drop(local, typ, ownership);
+            self.sink.free_local(local);
+        }
+
+        Ok(())
+    }
+
     fn eval_owned(&mut self, expr: &Located<parse::Expr>, into: Local) -> Semantic<Type> {
         use Ownership::{Borrowed, Owned};
 
@@ -626,7 +731,14 @@ impl<S: Sink> Context<'_, S> {
             }
 
             Range(length, value) => {
-                self.eval_range(length, value, into)?;
+                self.eval_fixed_call(
+                    "builtin_range",
+                    value.location(),
+                    &[length, value],
+                    &[Type::Int, Type::Bool],
+                    Some(into),
+                )?;
+
                 Ok((Type::List, Owned))
             }
 
@@ -643,7 +755,7 @@ impl<S: Sink> Context<'_, S> {
             }
 
             Binary { lhs, op, rhs, .. } => {
-                let typ = self.eval_binary(expr, lhs, *op, rhs, into)?;
+                let typ = self.eval_binary(expr.location(), lhs, *op, rhs, into)?;
                 Ok((typ, Owned))
             }
         }
@@ -651,7 +763,7 @@ impl<S: Sink> Context<'_, S> {
 
     fn eval_binary(
         &mut self,
-        complete: &Located<parse::Expr>,
+        at: &Location,
         lhs: &Located<parse::Expr>,
         op: parse::BinOp,
         rhs: &Located<parse::Expr>,
@@ -704,17 +816,12 @@ impl<S: Sink> Context<'_, S> {
                     return Ok((typ, rhs_ownership, Bool));
                 }
 
-                (ParseOp::Div, Int) => {
-                    return Err(Located::at(
-                        SemanticError::Floats,
-                        complete.location().clone(),
-                    ))
-                }
+                (ParseOp::Div, Int) => return Err(Located::at(SemanticError::Floats, at.clone())),
 
                 _ => {
                     return Err(Located::at(
                         SemanticError::InvalidOperands(op, typ),
-                        complete.location().clone(),
+                        at.clone(),
                     ))
                 }
             };
@@ -751,32 +858,6 @@ impl<S: Sink> Context<'_, S> {
             });
 
             Ok((arg_type, arg_ownership, ()))
-        })
-    }
-
-    fn eval_range(
-        &mut self,
-        length: &Located<parse::Expr>,
-        value: &Located<parse::Expr>,
-        into: Local,
-    ) -> Semantic<()> {
-        self.ephemeral(|this, length_local| {
-            this.ephemeral(|this, value_local| {
-                this.eval_expecting(length, length_local, Type::Int)?;
-                this.eval_expecting(value, value_local, Type::Bool)?;
-
-                this.sink.push(Instruction::Call {
-                    target: Function::External("builtin_range"),
-                    arguments: vec![length_local, value_local],
-                    output: Some(into),
-                });
-
-                Ok((
-                    Type::Bool,
-                    Ownership::Owned,
-                    (Type::Int, Ownership::Owned, ()),
-                ))
-            })
         })
     }
 
