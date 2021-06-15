@@ -187,6 +187,9 @@ pub enum SemanticError {
     #[error("Type mismatch: expected `{0}` or `{1}`, found `{2}`")]
     ExpectedOneOfTwo(Type, Type, Type),
 
+    #[error("Type mismatch: expected `{0}`, `{1}` or `{2}`, found `{3}`")]
+    ExpectedOneOfThree(Type, Type, Type, Type),
+
     #[error("Expected variable, found procedure family `{0}`")]
     ExpectedVar(Identifier),
 
@@ -372,6 +375,15 @@ impl<S: Sink> Context<'_, S> {
 
             match statement {
                 If { condition, body } => self.scan_conditional(condition, body)?,
+                For {
+                    variable,
+                    iterable,
+                    step,
+                    body,
+                } => {
+                    self.scan_loop(variable, iterable, step.as_ref(), body)?;
+                }
+
                 UserCall { procedure, args } => self.scan_user_call(procedure, args)?,
 
                 _ => todo!(),
@@ -397,6 +409,71 @@ impl<S: Sink> Context<'_, S> {
 
         self.scan_statements(body)?;
         self.sink.push(Instruction::SetLabel(if_false));
+
+        Ok(())
+    }
+
+    fn scan_loop(
+        &mut self,
+        variable: &Located<Identifier>,
+        iterable: &Located<parse::Expr>,
+        step: Option<&Located<parse::Expr>>,
+        body: &[parse::Statement],
+    ) -> Semantic<()> {
+        let iterator = self.sink.alloc_local();
+        self.sink.push(Instruction::LoadConst(0, iterator));
+
+        let step_local = self.sink.alloc_local();
+        if let Some(step) = step {
+            self.eval_expecting(step, step_local, Type::Int)?;
+        } else {
+            self.sink.push(Instruction::LoadConst(1, step_local));
+        }
+
+        let limit = self.sink.alloc_local();
+        match self.type_check(iterable)? {
+            Type::Int => drop(self.eval(iterable, limit)?),
+            Type::List | Type::Mat => drop(self.eval_len(iterable, limit)?),
+
+            bad => {
+                return Err(Located::at(
+                    SemanticError::ExpectedOneOfThree(Type::Int, Type::List, Type::Mat, bad),
+                    iterable.location().clone(),
+                ))
+            }
+        }
+
+        let condition_label = self.sink.next_label();
+        let end_label = self.sink.next_label();
+
+        self.sink.push(Instruction::SetLabel(condition_label));
+        self.ephemeral(|this, is_less| {
+            let op = ir::BinOp::Logic(ir::LogicOp::Less);
+            this.sink.push(Instruction::Move(iterator, is_less));
+            this.sink.push(Instruction::Binary(is_less, op, limit));
+            this.sink.push(Instruction::JumpIfFalse(is_less, end_label));
+
+            Ok((Type::Bool, Ownership::Owned, ()))
+        })?;
+
+        self.subscope(|this| {
+            let named = Named::Var(Variable {
+                access: Access::Local(iterator),
+                typ: Type::Int,
+            });
+
+            this.scope.symbols.insert(variable.as_ref().clone(), named);
+            this.scan_statements(body)
+        })?;
+
+        let op = ir::BinOp::Arithmetic(ir::ArithmeticOp::Add);
+        self.sink
+            .push(Instruction::Binary(iterator, op, step_local));
+        self.sink.push(Instruction::SetLabel(end_label));
+
+        self.sink.free_local(limit);
+        self.sink.free_local(step_local);
+        self.sink.free_local(iterator);
 
         Ok(())
     }

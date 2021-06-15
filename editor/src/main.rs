@@ -304,7 +304,7 @@ fn build_ui(application: &gtk::Application) {
     let src_view_as = sourceview.clone();
     let doc_name_as = doc_name.clone();
     let current_file_as = current_file.clone();
-    let terminal_as = terminal.clone(); 
+    let terminal_as = terminal.clone();
 
     // Add "save as" button functionality
     //
