@@ -24,22 +24,6 @@ use crate::{
 type List = Vec<bool>;
 type Mat = Vec<Vec<bool>>;
 
-/// Retorna cero.
-///
-///TODO: Eliminar
-#[no_mangle]
-pub extern "C" fn builtin_zero() -> usize {
-    0
-}
-
-/// Incrementa un entero.
-///
-///TODO: Eliminar
-#[no_mangle]
-pub extern "C" fn builtin_inc(n: usize) -> usize {
-    n.wrapping_add(1)
-}
-
 /// Imprime información de epuración en alguna manera no especificada.
 #[no_mangle]
 pub extern "C" fn builtin_debug(hint: isize) {
