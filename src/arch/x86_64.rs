@@ -205,6 +205,14 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
         emit!(self.cx, "mov", "{}, {}(%rip)", reg, global.as_ref())
     }
 
+    fn not(&mut self, reg: Reg) -> io::Result<()> {
+        emit!(self.cx, "xor", "$1, {}", reg.as_dword())
+    }
+
+    fn negate(&mut self, reg: Reg) -> io::Result<()> {
+        emit!(self.cx, "neg", "{}", reg)
+    }
+
     fn binary(&mut self, lhs: Reg, op: BinOp, rhs: Reg) -> io::Result<()> {
         match op {
             BinOp::Arithmetic(op) => {

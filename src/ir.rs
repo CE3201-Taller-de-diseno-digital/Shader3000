@@ -132,6 +132,10 @@ pub enum Instruction {
     /// Copiar los contenidos de una local a una variable global.
     StoreGlobal(Local, Global),
 
+    Not(Local),
+
+    Negate(Local),
+
     Binary(Local, BinOp, Local),
 
     /// Llamar a una función, copiando los argumentos de las locales

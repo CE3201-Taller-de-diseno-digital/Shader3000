@@ -179,6 +179,18 @@ fn emit_body<'a, E: Emitter<'a>>(
                 emitter.store_global(reg, global)?;
             }
 
+            Not(local) => {
+                let reg = emitter.read(*local)?;
+                emitter.not(reg)?;
+                emitter.assert_dirty(reg, *local);
+            }
+
+            Negate(local) => {
+                let reg = emitter.read(*local)?;
+                emitter.negate(reg)?;
+                emitter.assert_dirty(reg, *local);
+            }
+
             Binary(lhs, op, rhs) => {
                 let lhs_reg = emitter.read(*lhs)?;
                 let rhs_reg = emitter.read(*rhs)?;
@@ -229,6 +241,8 @@ fn required_locals(instruction: &Instruction) -> u32 {
         LoadConst(_, local) => required(*local),
         LoadGlobal(_, local) => required(*local),
         StoreGlobal(local, _) => required(*local),
+        Not(local) => required(*local),
+        Negate(local) => required(*local),
         Binary(lhs, _, rhs) => required(*lhs).max(required(*rhs)),
 
         Call {
