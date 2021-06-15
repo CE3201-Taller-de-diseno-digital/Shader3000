@@ -6,6 +6,7 @@
 
 use std::{
     fs,
+    io::BufWriter,
     path::Path,
     process::{Child, ChildStdin, Command, ExitStatus, Stdio},
     str::FromStr,
@@ -87,7 +88,10 @@ impl FromStr for Platform {
 ///
 /// Las operaciones de ensamblado y enlazado se delegan a ejecutables
 /// externos del paquete `binutils`.
-pub struct Linker(Child);
+pub struct Linker {
+    child: Child,
+    stdin: BufWriter<ChildStdin>,
+}
 
 impl Linker {
     /// Inicia una instancia del enlazador.
@@ -124,7 +128,10 @@ impl Linker {
             command.arg("-s");
         }
 
-        command.spawn().map(Linker).map_err(LinkerError::Io)
+        let mut child = command.spawn().map_err(LinkerError::Io)?;
+        let stdin = BufWriter::new(child.stdin.take().unwrap());
+
+        Ok(Linker { child, stdin })
     }
 
     /// Obtiene la entrada estándar del rproceso que espera recibir ensamblador.
@@ -132,13 +139,15 @@ impl Linker {
     /// Luego de crear una instancia con [`.spawn()`], se debe escribir código
     /// ensamblador en la forma exacta en que fue emitido por las fases de
     /// generación de código.
-    pub fn stdin(&mut self) -> &mut ChildStdin {
-        self.0.stdin.as_mut().unwrap()
+    pub fn stdin(&mut self) -> &mut BufWriter<ChildStdin> {
+        &mut self.stdin
     }
 
     /// Indica el fin del flujo de código y finaliza el enlazado.
     pub fn finish(mut self) -> Result<(), LinkerError> {
-        let status = self.0.wait().map_err(LinkerError::Io)?;
+        drop(self.stdin);
+
+        let status = self.child.wait().map_err(LinkerError::Io)?;
         if status.success() {
             Ok(())
         } else {
