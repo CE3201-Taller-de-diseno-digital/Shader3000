@@ -423,12 +423,16 @@ impl<S: Sink> Context<'_, S> {
         let iterator = self.sink.alloc_local();
         self.sink.push(Instruction::LoadConst(0, iterator));
 
-        let step_local = self.sink.alloc_local();
-        if let Some(step) = step {
-            self.eval_expecting(step, step_local, Type::Int)?;
-        } else {
-            self.sink.push(Instruction::LoadConst(1, step_local));
-        }
+        let step = {
+            let local = self.sink.alloc_local();
+            if let Some(step) = step {
+                self.eval_expecting(step, local, Type::Int)?;
+            } else {
+                self.sink.push(Instruction::LoadConst(1, local));
+            }
+
+            local
+        };
 
         let limit = self.sink.alloc_local();
         match self.type_check(iterable)? {
@@ -467,12 +471,12 @@ impl<S: Sink> Context<'_, S> {
         })?;
 
         let op = ir::BinOp::Arithmetic(ir::ArithmeticOp::Add);
-        self.sink
-            .push(Instruction::Binary(iterator, op, step_local));
+        self.sink.push(Instruction::Binary(iterator, op, step));
+        self.sink.push(Instruction::Jump(condition_label));
         self.sink.push(Instruction::SetLabel(end_label));
 
         self.sink.free_local(limit);
-        self.sink.free_local(step_local);
+        self.sink.free_local(step);
         self.sink.free_local(iterator);
 
         Ok(())
