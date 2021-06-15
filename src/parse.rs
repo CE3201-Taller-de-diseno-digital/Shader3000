@@ -225,17 +225,10 @@ impl Target {
 
 #[derive(Debug)]
 pub enum Index {
-    Direct(Selector),
-    Indirect(Selector, Selector),
-}
-
-#[derive(Debug)]
-pub enum Selector {
     Single(Located<Expr>),
-    Range {
-        start: Option<Located<Expr>>,
-        end: Option<Located<Expr>>,
-    },
+    Range(Located<Expr>, Located<Expr>),
+    Indirect(Located<Expr>, Located<Expr>),
+    Transposed(Located<Expr>),
 }
 
 #[non_exhaustive]
@@ -516,12 +509,9 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
         self.keyword(Keyword::In)?;
         let iterable = self.expr().strict()?;
 
-        let step = match self.attempt(|s| s.keyword(Keyword::Step).weak()) {
-            Err(Failure::Weak(_)) => None,
-            result => {
-                result?;
-                Some(self.expr().strict()?)
-            }
+        let step = match self.optional(|s| s.keyword(Keyword::Step).weak())? {
+            None => None,
+            Some(()) => Some(self.expr().strict()?),
         };
 
         let body = self.statement_block()?;
@@ -683,14 +673,13 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
 
     fn id_call(&mut self) -> Parse<(Located<Identifier>, Vec<Located<Expr>>)> {
         let id = self.id()?;
-        let args = match self.attempt(|s| s.expect(Token::OpenParen).weak()) {
-            Err(Failure::Weak(_)) => Vec::new(),
+        let args = match self.optional(|s| s.expect(Token::OpenParen).weak())? {
+            None => Vec::new(),
 
-            result => {
-                result?;
-
+            Some(()) => {
                 let args = self.comma_separated(Parser::expr, true)?;
                 self.expect(Token::CloseParen)?;
+
                 args
             }
         };
@@ -703,9 +692,9 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
 
         let mut indices = Vec::new();
         loop {
-            match self.attempt(Parser::index) {
-                Err(Failure::Weak(_)) => break,
-                index => indices.push(index?),
+            match self.optional(Parser::index)? {
+                None => break,
+                Some(index) => indices.push(index),
             }
         }
 
@@ -722,15 +711,28 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
         self.expect(Token::OpenSquare).weak()?;
         let start = self.last_known.clone();
 
-        let first = self.selector()?;
-        let index = match self.attempt(|s| s.expect(Token::Comma).weak()) {
-            Err(Failure::Weak(_)) => Index::Direct(first),
+        let index = match self.optional(|s| s.expect(Token::Colon).weak())? {
+            None => {
+                let first = self.expr().strict()?;
 
-            result => {
-                result?;
-                let second = self.selector()?;
+                match self.lookahead(|s| s.next())?.into_inner() {
+                    Token::Colon => {
+                        self.expect(Token::Colon)?;
+                        Index::Range(first, self.expr().strict()?)
+                    }
 
-                Index::Indirect(first, second)
+                    Token::Comma => {
+                        self.expect(Token::Comma)?;
+                        Index::Indirect(first, self.expr().strict()?)
+                    }
+
+                    _ => Index::Single(first),
+                }
+            }
+
+            Some(()) => {
+                self.expect(Token::Comma)?;
+                Index::Transposed(self.expr().strict()?)
             }
         };
 
@@ -738,22 +740,6 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
         let end = &self.last_known;
 
         Ok(Located::at(index, Location::span(start, end)))
-    }
-
-    fn selector(&mut self) -> Parse<Selector> {
-        let start = self.optional(Parser::expr)?;
-        let colon = self.attempt(|s| s.expect(Token::Colon).weak());
-
-        match (start, colon) {
-            (Some(start), Err(Failure::Weak(_))) => Ok(Selector::Single(start)),
-
-            (start, result) => {
-                result.strict()?;
-                let end = self.optional(Parser::expr)?;
-
-                Ok(Selector::Range { start, end })
-            }
-        }
     }
 
     fn typ(&mut self) -> Parse<Located<Type>> {
@@ -936,12 +922,9 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
         };
 
         loop {
-            match self.attempt(|s| s.expect(Token::Comma).weak()) {
-                Err(Failure::Weak(_)) => break Ok(items),
-                result => {
-                    result?;
-                    items.push(rule(self).strict()?);
-                }
+            match self.optional(|s| s.expect(Token::Comma).weak())? {
+                None => break Ok(items),
+                Some(()) => items.push(rule(self).strict()?),
             }
         }
     }
