@@ -109,8 +109,8 @@ fn emit_body<'a, E: Emitter<'a>>(
     // código muerto con -Wl,--gc-sections en la fase de enlazado
     writeln!(
         output,
-        ".section .text.{0}\n.global {0}\n{0}:",
-        function.name
+        ".section .text.{0}\n.align {1}\n.global {0}\n{0}:",
+        function.name, E::VALUE_SIZE
     )?;
 
     let context = Context {
