@@ -538,6 +538,11 @@ impl<S: Sink> Context<'_, S> {
                 Ok((Type::Int, Owned))
             }
 
+            Range(length, value) => {
+                self.scan_range(length, value, into)?;
+                Ok((Type::List, Owned))
+            }
+
             List(items) => {
                 let typ = self.build_sequence(&items, into)?;
                 Ok((typ, Owned))
@@ -569,6 +574,32 @@ impl<S: Sink> Context<'_, S> {
             });
 
             Ok((arg_type, arg_ownership, ()))
+        })
+    }
+
+    fn scan_range(
+        &mut self,
+        length: &Located<parse::Expr>,
+        value: &Located<parse::Expr>,
+        into: Local,
+    ) -> Semantic<()> {
+        self.ephemeral(|this, length_local| {
+            this.ephemeral(|this, value_local| {
+                this.eval_expecting(length, length_local, Type::Int)?;
+                this.eval_expecting(value, value_local, Type::Bool)?;
+
+                this.sink.push(Instruction::Call {
+                    target: Function::External("builtin_range"),
+                    arguments: vec![length_local, value_local],
+                    output: Some(into),
+                });
+
+                Ok((
+                    Type::Bool,
+                    Ownership::Owned,
+                    (Type::Int, Ownership::Owned, ()),
+                ))
+            })
         })
     }
 

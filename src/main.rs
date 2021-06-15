@@ -5,13 +5,19 @@
 
 use anyhow::{self, bail, Context};
 use clap::{self, crate_version, Arg};
-use compiler::{
-    ir::*,
-    link::{LinkOptions, Linker, Platform},
-    target,
+use std::{
+    fs::File,
+    io::{BufRead, BufReader},
+    str::FromStr,
 };
 
-use std::{fs::File, rc::Rc, str::FromStr};
+use compiler::{
+    error::Diagnostics,
+    ir::Program,
+    lex::Lexer,
+    link::{LinkOptions, Linker, Platform},
+    parse, source, target,
+};
 
 fn main() -> anyhow::Result<()> {
     // Parsing de CLI
@@ -41,6 +47,12 @@ fn main() -> anyhow::Result<()> {
                 .value_name("FILE")
                 .about("Output file ('-' along with -S for stdout)"),
         )
+        .arg(
+            Arg::new("input")
+                .required(true)
+                .value_name("INPUT")
+                .about("Input file ('-' for stdin)"),
+        )
         .get_matches();
 
     // Se extraen argumentos necesarios
@@ -49,8 +61,37 @@ fn main() -> anyhow::Result<()> {
     let arch = platform.arch();
     let asm = args.is_present("asm");
     let output = args.value_of("output").unwrap();
+    let input = args.value_of("input").unwrap();
 
-    let program = test_program();
+    // Lexer->parser->magia
+    let program = match input {
+        "-" => {
+            let stdin = std::io::stdin();
+            let mut stdin = stdin.lock();
+
+            frontend_pipeline(&mut stdin, "<stdin>")
+        }
+
+        _ => {
+            let file = File::open(input)
+                .with_context(|| format!("Failed to open for reading: {}", input))?;
+
+            let mut file = BufReader::new(file);
+            frontend_pipeline(&mut file, input)
+        }
+    };
+
+    let program = match program {
+        Ok(program) => program,
+
+        Err(diagnostics) => {
+            eprint!("{}", diagnostics);
+
+            //FIXME
+            return Ok(());
+        }
+    };
+
     match (asm, output) {
         // Salida a stdout sin enlazado
         (true, "-") => {
@@ -90,56 +131,20 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn test_program() -> Program {
-    // Este es un programa de prueba para mientras no se haya terminado la
-    // pipeline lexer->parser->magia->ir->asm->link. Debería eliminarse
-    // eventualmente.
+fn frontend_pipeline<R: BufRead>(reader: &mut R, name: &str) -> Result<Program, Diagnostics> {
+    let (start, stream) = source::consume(reader, name);
 
-    let builtin_inc = Function::External("builtin_inc");
-    let builtin_delay_seg = Function::External("builtin_delay_seg");
-    let builtin_debug = Function::External("builtin_debug");
-    let builtin_print_led = Function::External("builtin_printled");
-    let builtin_blink_mil = Function::External("builtin_blink_mil");
-
-    let user_main = GeneratedFunction {
-        name: Rc::new(String::from("user_main")),
-        parameters: 0,
-        body: vec![
-            Instruction::LoadConst(0, Local(0)),
-            Instruction::LoadConst(500, Local(1)),
-            Instruction::LoadConst(1, Local(2)),
-            Instruction::Call {
-                target: builtin_blink_mil,
-                arguments: vec![Local(0), Local(0), Local(1), Local(2)],
-                output: None,
-            },
-            Instruction::SetLabel(Label(0)),
-            Instruction::Call {
-                target: builtin_print_led,
-                arguments: vec![Local(0), Local(0), Local(2)],
-                output: None,
-            },
-            Instruction::Call {
-                target: builtin_inc,
-                arguments: vec![Local(0)],
-                output: Some(Local(0)),
-            },
-            Instruction::Call {
-                target: builtin_debug,
-                arguments: vec![Local(0)],
-                output: None,
-            },
-            Instruction::Call {
-                target: builtin_delay_seg,
-                arguments: vec![Local(0)],
-                output: None,
-            },
-            Instruction::Jump(Label(0)),
-        ],
+    let lexer = Lexer::new(start.clone(), stream);
+    let tokens = match lexer.try_exhaustive() {
+        Ok(tokens) => tokens,
+        Err(errors) => return Err(Diagnostics::from(errors).kind("Lexical error")),
     };
 
-    Program {
-        globals: vec![],
-        code: vec![user_main],
-    }
+    let ast = match parse::parse(tokens.iter(), start) {
+        Ok(ast) => ast,
+        Err(error) => return Err(Diagnostics::from(error).kind("Syntax error")),
+    };
+
+    ast.resolve()
+        .map_err(|error| Diagnostics::from(error).kind("Semantic error"))
 }
