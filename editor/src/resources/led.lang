@@ -77,12 +77,14 @@ except according to those terms.
     </context>
 
     <context id="reserved" style-ref="keyword">
-      <keyword>list</keyword>
+      <keyword>lists</keyword>
     </context>
 
     <context id="types" style-ref="type">
       <keyword>bool</keyword>
       <keyword>int</keyword>
+      <keyword>list</keyword>
+      <keyword>mat</keyword>
     </context>
 
     <context id="self" style-ref="identifier">
