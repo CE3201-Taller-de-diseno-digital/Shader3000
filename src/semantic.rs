@@ -420,6 +420,19 @@ impl<S: Sink> Context<'_, S> {
         step: Option<&Located<parse::Expr>>,
         body: &[parse::Statement],
     ) -> Semantic<()> {
+        let limit = self.sink.alloc_local();
+        match self.type_check(iterable)? {
+            Type::Int => drop(self.eval(iterable, limit)?),
+            Type::List | Type::Mat => drop(self.eval_len(iterable, limit)?),
+
+            bad => {
+                return Err(Located::at(
+                    SemanticError::ExpectedOneOfThree(Type::Int, Type::List, Type::Mat, bad),
+                    iterable.location().clone(),
+                ))
+            }
+        }
+
         let iterator = self.sink.alloc_local();
         self.sink.push(Instruction::LoadConst(0, iterator));
 
@@ -433,19 +446,6 @@ impl<S: Sink> Context<'_, S> {
 
             local
         };
-
-        let limit = self.sink.alloc_local();
-        match self.type_check(iterable)? {
-            Type::Int => drop(self.eval(iterable, limit)?),
-            Type::List | Type::Mat => drop(self.eval_len(iterable, limit)?),
-
-            bad => {
-                return Err(Located::at(
-                    SemanticError::ExpectedOneOfThree(Type::Int, Type::List, Type::Mat, bad),
-                    iterable.location().clone(),
-                ))
-            }
-        }
 
         let condition_label = self.sink.next_label();
         let end_label = self.sink.next_label();
@@ -475,8 +475,8 @@ impl<S: Sink> Context<'_, S> {
         self.sink.push(Instruction::Jump(condition_label));
         self.sink.push(Instruction::SetLabel(end_label));
 
-        self.sink.free_local(limit);
         self.sink.free_local(step);
+        self.sink.free_local(limit);
         self.sink.free_local(iterator);
 
         Ok(())
