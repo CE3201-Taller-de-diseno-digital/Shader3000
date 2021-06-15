@@ -185,10 +185,10 @@ pub enum SemanticError {
     ExpectedType(Type, Type),
 
     #[error("Type mismatch: expected `{0}` or `{1}`, found `{2}`")]
-    ExpectedOneOfTwo(Type, Type, Type),
+    ExpectedTwo(Type, Type, Type),
 
     #[error("Type mismatch: expected `{0}`, `{1}` or `{2}`, found `{3}`")]
-    ExpectedOneOfThree(Type, Type, Type, Type),
+    ExpectedThree(Type, Type, Type, Type),
 
     #[error("Expected variable, found procedure family `{0}`")]
     ExpectedVar(Identifier),
@@ -211,8 +211,8 @@ pub enum SemanticError {
     #[error("Procedure family `{0}` exists, but the overload `{0}({1})` is not defined")]
     NoSuchOverload(Identifier, String),
 
-    #[error("Invalid operands for `{0}`: `{1}` and `{1}`")]
-    InvalidOperands(parse::BinOp, Type),
+    #[error("Invalid operands for `{0}`: `{1}` and `{2}`")]
+    InvalidOperands(parse::BinOp, Type, Type),
 
     #[error("Expected {0} arguments, found {1}")]
     BadArgumentCount(usize, usize),
@@ -490,7 +490,7 @@ impl<S: Sink> Context<'_, S> {
 
             bad => {
                 return Err(Located::at(
-                    SemanticError::ExpectedOneOfThree(Type::Int, Type::List, Type::Mat, bad),
+                    SemanticError::ExpectedThree(Type::Int, Type::List, Type::Mat, bad),
                     iterable.location().clone(),
                 ))
             }
@@ -778,7 +778,16 @@ impl<S: Sink> Context<'_, S> {
     ) -> Semantic<Type> {
         self.ephemeral(|this, rhs_local| {
             let (typ, lhs_ownership) = this.eval(lhs, into)?;
-            let rhs_ownership = this.eval_expecting(rhs, rhs_local, typ)?;
+            let rhs_ownership = match this.eval(rhs, rhs_local)? {
+                (rhs_typ, _) if rhs_typ != typ => {
+                    return Err(Located::at(
+                        SemanticError::InvalidOperands(op, typ, rhs_typ),
+                        at.clone(),
+                    ))
+                }
+
+                (_, rhs_ownership) => rhs_ownership,
+            };
 
             use ir::{ArithmeticOp, BinOp as IrOp, LogicOp};
             use parse::BinOp as ParseOp;
@@ -827,7 +836,7 @@ impl<S: Sink> Context<'_, S> {
 
                 _ => {
                     return Err(Located::at(
-                        SemanticError::InvalidOperands(op, typ),
+                        SemanticError::InvalidOperands(op, typ, typ),
                         at.clone(),
                     ))
                 }
@@ -852,7 +861,7 @@ impl<S: Sink> Context<'_, S> {
 
                 _ => {
                     return Err(Located::at(
-                        SemanticError::ExpectedOneOfTwo(Type::List, Type::Mat, arg_type),
+                        SemanticError::ExpectedTwo(Type::List, Type::Mat, arg_type),
                         expr.location().clone(),
                     ))
                 }
@@ -880,7 +889,7 @@ impl<S: Sink> Context<'_, S> {
 
                 bad => {
                     return Err(Located::at(
-                        SemanticError::ExpectedOneOfTwo(Type::Bool, Type::List, bad),
+                        SemanticError::ExpectedTwo(Type::Bool, Type::List, bad),
                         first.location().clone(),
                     ))
                 }
@@ -984,7 +993,7 @@ impl<S: Sink> Context<'_, S> {
                     .then(|| ())
                     .ok_or_else(|| {
                         Located::at(
-                            SemanticError::ExpectedOneOfTwo(Type::List, Type::Mat, typ),
+                            SemanticError::ExpectedTwo(Type::List, Type::Mat, typ),
                             target.var().location().clone(),
                         )
                     })
