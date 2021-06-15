@@ -81,6 +81,31 @@ impl<S: Into<String>> From<S> for Global {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum ArithmeticOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum LogicOp {
+    Equal,
+    NotEqual,
+    Less,
+    LessOrEqual,
+    Greater,
+    GreaterOrEqual,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum BinOp {
+    Arithmetic(ArithmeticOp),
+    Logic(LogicOp),
+}
+
 /// Una instrucción de representación intermedia.
 #[derive(Debug)]
 pub enum Instruction {
@@ -106,6 +131,8 @@ pub enum Instruction {
 
     /// Copiar los contenidos de una local a una variable global.
     StoreGlobal(Local, Global),
+
+    Binary(Local, BinOp, Local),
 
     /// Llamar a una función, copiando los argumentos de las locales
     /// indicadas para ese efecto. Opcionalmente, el valor de retorno
