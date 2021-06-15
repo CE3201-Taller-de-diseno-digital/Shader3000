@@ -183,7 +183,7 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
     }
 
     fn jump_if_false(&mut self, reg: Reg, label: &str) -> io::Result<()> {
-        emit!(self.cx, "testl", "{0}, {0}", reg.as_dword())?;
+        emit!(self.cx, "test", "{0}, {0}", reg.as_dword())?;
         emit!(self.cx, "jz", "{}", label)
     }
 
