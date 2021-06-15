@@ -238,7 +238,7 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
 impl<'a> Emitter<'a> {
     /// Agrega un offset al puntero de stack.
     fn move_rsp(&mut self, offset: i32) -> io::Result<()> {
-        let instruction = if offset < 0 { "subq" } else { "addq" };
+        let instruction = if offset < 0 { "sub" } else { "add" };
         let offset = offset.abs() * VALUE_SIZE as i32;
         emit!(self.cx, instruction, "$0x{:x}, %rsp", offset)
     }
