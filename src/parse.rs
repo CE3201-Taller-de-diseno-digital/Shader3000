@@ -1,4 +1,8 @@
-use std::{iter::Peekable, marker::PhantomData};
+use std::{
+    fmt::{self, Display},
+    iter::Peekable,
+    marker::PhantomData,
+};
 use thiserror::Error;
 
 use crate::{
@@ -162,7 +166,7 @@ pub enum ExprLimits {
     Enclosed,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum BinOp {
     Add,
     Sub,
@@ -177,6 +181,30 @@ pub enum BinOp {
     LessOrEqual,
     Greater,
     GreaterOrEqual,
+}
+
+impl Display for BinOp {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use BinOp::*;
+
+        let string = match self {
+            Add => "+",
+            Sub => "-",
+            Mul => "*",
+            Pow => "**",
+            Div => "/",
+            Mod => "%",
+            IntegerDiv => "//",
+            Equal => "==",
+            NotEqual => "<>",
+            Less => "<",
+            LessOrEqual => "<=",
+            Greater => ">",
+            GreaterOrEqual => ">=",
+        };
+
+        fmt.write_str(string)
+    }
 }
 
 #[derive(Debug)]

@@ -207,6 +207,12 @@ pub enum SemanticError {
 
     #[error("Procedure family `{0}` exists, but the overload `{0}({1})` is not defined")]
     NoSuchOverload(Identifier, String),
+
+    #[error("Invalid operands for `{0}`: `{1}` and `{1}`")]
+    InvalidOperands(parse::BinOp, Type),
+
+    #[error("Floats are not supported by this implementation")]
+    Floats,
 }
 
 impl parse::Ast {
@@ -534,25 +540,115 @@ impl<S: Sink> Context<'_, S> {
             Read(target) => self.read(target, into),
 
             Len(expr) => {
-                self.scan_len(expr, into)?;
+                self.eval_len(expr, into)?;
                 Ok((Type::Int, Owned))
             }
 
             Range(length, value) => {
-                self.scan_range(length, value, into)?;
+                self.eval_range(length, value, into)?;
                 Ok((Type::List, Owned))
             }
 
             List(items) => {
-                let typ = self.build_sequence(&items, into)?;
+                let typ = self.eval_sequence(&items, into)?;
                 Ok((typ, Owned))
             }
 
-            _ => todo!(),
+            Negate(expr) => {
+                self.eval_expecting(expr, into, Type::Int)?;
+                self.sink.push(Instruction::Negate(into));
+
+                Ok((Type::Int, Owned))
+            }
+
+            Binary { lhs, op, rhs, .. } => {
+                let typ = self.eval_binary(expr, lhs, *op, rhs, into)?;
+                Ok((typ, Owned))
+            }
         }
     }
 
-    fn scan_len(&mut self, expr: &Located<parse::Expr>, into: Local) -> Semantic<()> {
+    fn eval_binary(
+        &mut self,
+        complete: &Located<parse::Expr>,
+        lhs: &Located<parse::Expr>,
+        op: parse::BinOp,
+        rhs: &Located<parse::Expr>,
+        into: Local,
+    ) -> Semantic<Type> {
+        self.ephemeral(|this, rhs_local| {
+            let (typ, lhs_ownership) = this.eval(lhs, into)?;
+            let rhs_ownership = this.eval_expecting(rhs, rhs_local, typ)?;
+
+            use ir::{ArithmeticOp, BinOp as IrOp, LogicOp};
+            use parse::BinOp as ParseOp;
+            use Type::*;
+
+            let op = match (op, typ) {
+                (ParseOp::Add, Int) => IrOp::Arithmetic(ArithmeticOp::Add),
+                (ParseOp::Sub, Int) => IrOp::Arithmetic(ArithmeticOp::Sub),
+                (ParseOp::Mul, Int) => IrOp::Arithmetic(ArithmeticOp::Mul),
+                (ParseOp::Mod, Int) => IrOp::Arithmetic(ArithmeticOp::Mod),
+                (ParseOp::IntegerDiv, Int) => IrOp::Arithmetic(ArithmeticOp::Div),
+
+                (ParseOp::Equal, Int | Bool) => IrOp::Logic(LogicOp::Equal),
+                (ParseOp::NotEqual, Int | Bool) => IrOp::Logic(LogicOp::NotEqual),
+                (ParseOp::Greater, Int | Bool) => IrOp::Logic(LogicOp::Greater),
+                (ParseOp::GreaterOrEqual, Int | Bool) => IrOp::Logic(LogicOp::GreaterOrEqual),
+                (ParseOp::Less, Int | Bool) => IrOp::Logic(LogicOp::Less),
+                (ParseOp::LessOrEqual, Int | Bool) => IrOp::Logic(LogicOp::LessOrEqual),
+
+                (ParseOp::Equal | ParseOp::NotEqual, List | Mat) => {
+                    let comparator = if typ == List {
+                        "builtin_cmp_list"
+                    } else {
+                        "builtin_cmp_mat"
+                    };
+
+                    this.ephemeral(|this, lhs_local| {
+                        this.sink.push(Instruction::Move(into, lhs_local));
+                        this.sink.push(Instruction::Call {
+                            target: Function::External(comparator),
+                            arguments: vec![lhs_local, rhs_local],
+                            output: Some(into),
+                        });
+
+                        Ok((typ, lhs_ownership, ()))
+                    })?;
+
+                    if op == ParseOp::NotEqual {
+                        this.sink.push(Instruction::Not(into));
+                    }
+
+                    return Ok((typ, rhs_ownership, Bool));
+                }
+
+                (ParseOp::Div, Int) => {
+                    return Err(Located::at(
+                        SemanticError::Floats,
+                        complete.location().clone(),
+                    ))
+                }
+
+                _ => {
+                    return Err(Located::at(
+                        SemanticError::InvalidOperands(op, typ),
+                        complete.location().clone(),
+                    ))
+                }
+            };
+
+            let result_type = match op {
+                IrOp::Arithmetic(_) => Int,
+                IrOp::Logic(_) => Bool,
+            };
+
+            this.sink.push(Instruction::Binary(into, op, rhs_local));
+            Ok((typ, rhs_ownership, result_type))
+        })
+    }
+
+    fn eval_len(&mut self, expr: &Located<parse::Expr>, into: Local) -> Semantic<()> {
         self.ephemeral(|this, arg| {
             let (arg_type, arg_ownership) = this.eval(expr, arg)?;
             let target = match arg_type {
@@ -577,7 +673,7 @@ impl<S: Sink> Context<'_, S> {
         })
     }
 
-    fn scan_range(
+    fn eval_range(
         &mut self,
         length: &Located<parse::Expr>,
         value: &Located<parse::Expr>,
@@ -603,7 +699,7 @@ impl<S: Sink> Context<'_, S> {
         })
     }
 
-    fn build_sequence(&mut self, items: &[Located<parse::Expr>], into: Local) -> Semantic<Type> {
+    fn eval_sequence(&mut self, items: &[Located<parse::Expr>], into: Local) -> Semantic<Type> {
         let item = self.sink.alloc_local();
 
         let is_mat = match items.first() {
@@ -648,13 +744,10 @@ impl<S: Sink> Context<'_, S> {
             self.sink.push(Instruction::LoadConst(i as i32, index));
 
             let (insert, expected, arguments) = if is_mat {
-                (
-                    "builtin_insert_mat",
-                    Type::List,
-                    vec![item, zero.unwrap(), index],
-                )
+                let arguments = vec![into, item, zero.unwrap(), index];
+                ("builtin_insert_mat", Type::List, arguments)
             } else {
-                ("builtin_insert_list", Type::Bool, vec![index, item])
+                ("builtin_insert_list", Type::Bool, vec![into, index, item])
             };
 
             let ownership = self.eval_expecting(expr, item, expected)?;
