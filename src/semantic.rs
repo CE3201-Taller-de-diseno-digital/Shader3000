@@ -405,7 +405,9 @@ impl<S: Sink> Context<'_, S> {
 
                     let args = [column, row, count, state];
                     let types = [Type::Int, Type::Int, Type::Int, Type::Bool];
-                    self.eval_fixed_call(builtin, state.location(), &args, &types, None)?;
+                    let location = state.location();
+
+                    self.eval_fixed_call(builtin, location, None, &args, &types, None)?;
                 }
 
                 Delay { count, unit } => {
@@ -415,19 +417,18 @@ impl<S: Sink> Context<'_, S> {
                         Minutes => "builtin_delay_min",
                     };
 
-                    self.eval_fixed_call(builtin, count.location(), &[count], &[Type::Int], None)?;
+                    let types = [Type::Int];
+                    let location = count.location();
+                    self.eval_fixed_call(builtin, location, None, &[count], &types, None)?;
                 }
 
                 PrintLed { column, row, value } => {
                     let args = [column, row, value];
                     let types = [Type::Int, Type::Int, Type::Bool];
-                    self.eval_fixed_call(
-                        "builtin_printled",
-                        value.location(),
-                        &args,
-                        &types,
-                        None,
-                    )?;
+                    let location = value.location();
+                    let builtin = "builtin_printled";
+
+                    self.eval_fixed_call(builtin, location, None, &args, &types, None)?;
                 }
 
                 PrintLedX {
@@ -443,7 +444,9 @@ impl<S: Sink> Context<'_, S> {
 
                     let args = [index, object];
                     let types = [Type::Int, object_type];
-                    self.eval_fixed_call(builtin, object.location(), &args, &types, None)?;
+                    let location = object.location();
+
+                    self.eval_fixed_call(builtin, location, None, &args, &types, None)?;
                 }
 
                 _ => todo!(),
@@ -622,6 +625,7 @@ impl<S: Sink> Context<'_, S> {
         &mut self,
         builtin: &'static str,
         at: &Location,
+        subject: Option<Local>,
         args: &[&Located<parse::Expr>],
         types: &[Type],
         output: Option<Local>,
@@ -635,6 +639,10 @@ impl<S: Sink> Context<'_, S> {
 
         let mut arg_locals = Vec::new();
         let mut ownerships = Vec::new();
+
+        if let Some(subject) = subject {
+            arg_locals.push(subject);
+        }
 
         for (arg, typ) in args.iter().copied().zip(types.iter()) {
             let local = self.sink.alloc_local();
@@ -652,6 +660,7 @@ impl<S: Sink> Context<'_, S> {
 
         let dropped = arg_locals
             .into_iter()
+            .skip(subject.iter().count())
             .zip(ownerships.into_iter())
             .zip(types.iter().cloned());
 
@@ -731,14 +740,12 @@ impl<S: Sink> Context<'_, S> {
             }
 
             Range(length, value) => {
-                self.eval_fixed_call(
-                    "builtin_range",
-                    value.location(),
-                    &[length, value],
-                    &[Type::Int, Type::Bool],
-                    Some(into),
-                )?;
+                let builtin = "builtin_range";
+                let args = [&**length, &**value];
+                let types = [Type::Int, Type::Bool];
+                let location = value.location();
 
+                self.eval_fixed_call(builtin, location, None, &args, &types, Some(into))?;
                 Ok((Type::List, Owned))
             }
 
@@ -957,11 +964,90 @@ impl<S: Sink> Context<'_, S> {
                 .push(Instruction::LoadGlobal(global.clone(), into)),
         }
 
-        if !target.indices().is_empty() {
-            todo!()
+        let mut typ = var.typ;
+        let mut ownership = Ownership::Borrowed;
+
+        for index in target.indices() {
+            use parse::Index;
+
+            let expect_mat = || {
+                (typ == Type::Mat).then(|| ()).ok_or_else(|| {
+                    Located::at(
+                        SemanticError::ExpectedType(Type::Mat, typ),
+                        target.var().location().clone(),
+                    )
+                })
+            };
+
+            let expect_list_or_mat = || {
+                (typ == Type::List || typ == Type::Mat)
+                    .then(|| ())
+                    .ok_or_else(|| {
+                        Located::at(
+                            SemanticError::ExpectedOneOfTwo(Type::List, Type::Mat, typ),
+                            target.var().location().clone(),
+                        )
+                    })
+            };
+
+            let (builtin, next_type, args) = match index.as_ref() {
+                Index::Single(expr) => {
+                    expect_list_or_mat()?;
+                    let (builtin, next_type) = if typ == Type::List {
+                        ("builtin_index_list", Type::Bool)
+                    } else {
+                        ("builtin_index_row_mat", Type::List)
+                    };
+
+                    (builtin, next_type, vec![expr])
+                }
+
+                Index::Range(from, to) => {
+                    expect_list_or_mat()?;
+                    let builtin = if typ == Type::List {
+                        "builtin_slice_list"
+                    } else {
+                        "builtin_slice_mat"
+                    };
+
+                    (builtin, typ, vec![from, to])
+                }
+
+                Index::Indirect(row, column) => {
+                    expect_mat()?;
+                    ("builtin_index_entry_mat", Type::Bool, vec![row, column])
+                }
+
+                Index::Transposed(column) => {
+                    expect_mat()?;
+                    ("builtin_index_column_mat", Type::List, vec![column])
+                }
+            };
+
+            const TYPES: [Type; 2] = [Type::Int, Type::Int];
+
+            let location = index.location();
+            let types = &TYPES[..args.len()];
+
+            if destructor(typ, ownership).is_none() {
+                self.eval_fixed_call(builtin, location, Some(into), &args, types, Some(into))?;
+            } else {
+                self.ephemeral(|this, local| {
+                    this.eval_fixed_call(builtin, location, Some(into), &args, types, Some(local))?;
+
+                    this.drop(into, typ, ownership);
+                    this.sink.push(Instruction::Move(local, into));
+
+                    // Se tomó ownership con Instruction::Move(), no se debe hacer drop
+                    Ok((Type::Int, Ownership::Borrowed, ()))
+                })?;
+            }
+
+            ownership = Ownership::Owned;
+            typ = next_type;
         }
 
-        Ok((var.typ, Ownership::Borrowed))
+        Ok((typ, ownership))
     }
 
     fn expire(mut self) -> S {
@@ -1017,15 +1103,7 @@ impl<S: Sink> Context<'_, S> {
     }
 
     fn drop(&mut self, local: Local, typ: Type, ownership: Ownership) {
-        let destructor = match (typ, ownership) {
-            (_, Ownership::Borrowed) => None,
-            (Type::Int, _) => None,
-            (Type::Bool, _) => None,
-            (Type::List, Ownership::Owned) => Some("builtin_drop_list"),
-            (Type::Mat, Ownership::Owned) => Some("builtin_drop_mat"),
-        };
-
-        if let Some(destructor) = destructor {
+        if let Some(destructor) = destructor(typ, ownership) {
             self.sink.push(Instruction::Call {
                 target: Function::External(destructor),
                 arguments: vec![local],
@@ -1051,6 +1129,16 @@ fn break_assignment<'a>(
         SemanticError::UnbalancedAssignment,
         error_location.clone(),
     ))
+}
+
+fn destructor(typ: Type, ownership: Ownership) -> Option<&'static str> {
+    match (typ, ownership) {
+        (_, Ownership::Borrowed) => None,
+        (Type::Int, _) => None,
+        (Type::Bool, _) => None,
+        (Type::List, Ownership::Owned) => Some("builtin_drop_list"),
+        (Type::Mat, Ownership::Owned) => Some("builtin_drop_mat"),
+    }
 }
 
 fn mangle(name: &Identifier, types: &[Type]) -> String {
