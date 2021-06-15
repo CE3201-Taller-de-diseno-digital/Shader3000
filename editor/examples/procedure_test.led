@@ -1,0 +1,97 @@
+
+##Cada uno de los grupos deberá traer el código suficiente y
+##el dispositivo necesario para presentar una de las
+##animaciones presentadas al inicio del presente documento.
+
+##Cada uno de los grupos deberá traer el código suficiente y
+##el dispositivo necesario para hacer una animación donde
+##pueda demostrar a completitud todas las bondades del
+##proyecto realizado.
+
+##El profesor llevará a la revisión un requerimiento tipo
+##“letrero” que deberá generar animación (letras pasando
+##lentamente por el dispositivo).
+##El grupo deberá generar
+##el código suficiente y necesario para realizar dicha
+##animación.
+
+
+procedure main(){
+
+	rows = 8;
+	
+	cols = 8;
+
+}
+
+procedure OFF(){
+
+	off_mat =    [ [false,false,false,false,false,false,false,false],
+	
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false] ];
+	
+	printledX("M",0,off_mat);
+}
+
+procedure ON(){
+
+	on_mat =    [ [true,true,true,true,true,true,true,true],
+	
+				 [true,true,true,true,true,true,true,true],
+				 
+				 [true,true,true,true,true,true,true,true],
+				 
+				 [true,true,true,true,true,true,true,true],
+				 
+				 [true,true,true,true,true,true,true,true],
+				 
+				 [true,true,true,true,true,true,true,true],
+				 
+				 [true,true,true,true,true,true,true,true],
+				 
+				 [true,true,true,true,true,true,true,true] ];
+	
+	printledX("M",0,on_mat);
+}
+
+procedure one_by_one(only_one: bool){
+
+	call off();
+	
+	for i in rows {
+		
+		for j in cols {
+			
+			printLed(i,j,true);
+			
+			delay(150,"mil");
+			
+			if only_one {
+				printLed(i,j,false);
+			}
+		}
+	
+	}
+	
+}
+
+
+
+
+
+
+
+
+
