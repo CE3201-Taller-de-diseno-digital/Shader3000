@@ -863,7 +863,7 @@ impl<S: Sink> Context<'_, S> {
             let (arg_type, arg_ownership) = this.eval(expr, arg)?;
             let target = match arg_type {
                 Type::List => Function::External("builtin_len_list"),
-                Type::Mat => Function::External("builtin_len_mat"),
+                Type::Mat => Function::External("builtin_shapef"),
 
                 _ => {
                     return Err(Located::at(

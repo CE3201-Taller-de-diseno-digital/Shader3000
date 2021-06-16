@@ -172,11 +172,7 @@ pub extern "C" fn builtin_len_list(list: *mut List) -> isize {
     list.len() as isize
 }
 
-#[no_mangle]
-pub extern "C" fn builtin_len_mat(mat: *mut Mat) -> isize {
-    let mat = unsafe { &*mat };
-    mat.len() as isize
-}
+// No hay builtin_len_mat(), en vez de eso se tiene builtin_shapef()
 
 #[no_mangle]
 pub extern "C" fn builtin_slice_list(list: *mut List, from: isize, to: isize) -> *mut List {
@@ -190,6 +186,18 @@ pub extern "C" fn builtin_slice_mat(mat: *mut List, from: isize, to: isize) -> *
     let mat = unsafe { &*mat };
     let slice = (&mat[try_usize(from)..try_usize(to)]).to_vec();
     Rc::into_raw(Rc::new(slice)) as *mut _
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_shapef(mat: *mut Mat) -> isize {
+    let mat = unsafe { &*mat };
+    mat.len() as isize
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_shapec(mat: *mut Mat) -> isize {
+    let mat = unsafe { &*mat };
+    mat.first().map(|row| row.len()).unwrap_or(0) as isize
 }
 
 #[no_mangle]
