@@ -59,7 +59,7 @@ fn build_ui(application: &gtk::Application) {
     //______________/  Create main window
 
     //Load .glade file
-    let glade_src = include_str!("IDE.glade");
+    let glade_src = include_str!("resources/IDE.glade");
     let builder = gtk::Builder::from_string(glade_src);
 
     //create main window
@@ -72,7 +72,7 @@ fn build_ui(application: &gtk::Application) {
     // Load the .css file
     let provider = gtk::CssProvider::new();
     provider
-        .load_from_path("editor/src/resources/style.css")
+        .load_from_path("resources/style.css")
         .unwrap();
     gtk::StyleContext::add_provider_for_screen(
         &window.get_screen().unwrap(),
@@ -130,7 +130,7 @@ fn build_ui(application: &gtk::Application) {
     let doc_name: gtk::Label = builder.get_object("doc_name").unwrap();
 
     //File
-    let current_file = gtk::Label::new(Some("build/tmp.led")); //Ruta de guardado para archivos unnamed
+    let current_file = gtk::Label::new(Some("tmp.led")); //Ruta de guardado para archivos unnamed
 
     //               ___________________
     //______________/  Add funtionality
@@ -145,21 +145,14 @@ fn build_ui(application: &gtk::Application) {
 
             save.activate();
 
-            let mut cmd_base: String = "./compiler -st esp8266 -o ?? ".to_owned();
-
             let filename: &str = &current_file.get_text();
 
-            cmd_base.push_str(filename);
+            let cmd = Command::new("./compiler").args(&[filename,"-o","exe","--target","esp8266"]).output().unwrap();
+            let answer = std::str::from_utf8(&cmd.stderr).unwrap();
 
-
-            //let cmd = Command::new(cmd_base).stdout(Stdio::piped()).output().unwrap();
-            //let answer = String::from_utf8(cmd.stdout).unwrap();
-
-
-            //let term_buffer = terminal.get_buffer().unwrap();
-            //let mut bounds = term_buffer.get_bounds();
-            //term_buffer.insert(&mut bounds.1,&answer);
-
+            let term_buffer = terminal.get_buffer().unwrap();
+            let mut bounds = term_buffer.get_bounds();
+            term_buffer.insert(&mut bounds.1,&answer);
 
         }),
     );
@@ -173,12 +166,12 @@ fn build_ui(application: &gtk::Application) {
 
        compile.activate();
 
-       //let cmd = Command::new("cargo run --release --example frontend < ~/Desktop/hola").stdout(Stdio::piped()).output().unwrap();
-       //let answer = String::from_utf8(cmd.stdout).unwrap();
+       let cmd = Command::new("espflash").args(&["/dev/ttyUSB0","exe"]).output().unwrap();
+       let answer = std::str::from_utf8(&cmd.stderr).unwrap();
 
-       //let term_buffer = terminal.get_buffer().unwrap();
-       //let mut bounds = term_buffer.get_bounds();
-       //term_buffer.insert(&mut bounds.1,&answer);
+       let term_buffer = terminal.get_buffer().unwrap();
+       let mut bounds = term_buffer.get_bounds();
+       term_buffer.insert(&mut bounds.1,&answer);
 
     }));
 
@@ -199,7 +192,7 @@ fn build_ui(application: &gtk::Application) {
 
             doc_name.set_text("unnamed");
 
-            current_file.set_text("build/tmp.led");
+            current_file.set_text("tmp.led");
 
         }),
     );
