@@ -132,7 +132,7 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
     }
 
     fn jump_if_false(&mut self, reg: Reg, label: &str) -> io::Result<()> {
-        emit!(self.cx, "bnez", "{}, {}", reg, label)
+        emit!(self.cx, "beqz", "{}, {}", reg, label)
     }
 
     fn load_const(&mut self, value: i32, reg: Reg) -> io::Result<()> {
