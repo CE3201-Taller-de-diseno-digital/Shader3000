@@ -173,7 +173,7 @@ fn build_ui(application: &gtk::Application) {
 
        compile.activate();
 
-       //let cmd = Command::new("ls").stdout(Stdio::piped()).output().unwrap();
+       //let cmd = Command::new("cargo run --release --example frontend < ~/Desktop/hola").stdout(Stdio::piped()).output().unwrap();
        //let answer = String::from_utf8(cmd.stdout).unwrap();
 
        //let term_buffer = terminal.get_buffer().unwrap();
@@ -304,6 +304,7 @@ fn build_ui(application: &gtk::Application) {
     let src_view_as = sourceview.clone();
     let doc_name_as = doc_name.clone();
     let current_file_as = current_file.clone();
+    let terminal_as = terminal.clone();
 
     // Add "save as" button functionality
     //
@@ -325,7 +326,7 @@ fn build_ui(application: &gtk::Application) {
 
         file_chooser.set_do_overwrite_confirmation(true);
 
-        file_chooser.connect_response(clone!(@weak src_view_as, @weak doc_name_as ,@weak current_file_as => move|file_chooser, response| {
+        file_chooser.connect_response(clone!(@weak src_view_as, @weak doc_name_as ,@weak current_file_as, @weak terminal_as => move|file_chooser, response| {
             if response == gtk::ResponseType::Ok {
 
                 let filename = file_chooser.get_filename().expect("Couldn't get filename");
@@ -355,6 +356,12 @@ fn build_ui(application: &gtk::Application) {
                     Some(name) => {  let chunks:Vec<&str> = name.split("/").collect();
                                      doc_name_as.set_text(&chunks[chunks.len()-1]);
                                      current_file_as.set_text(name);
+                                     let term_buffer = terminal_as.get_buffer().unwrap();
+                                     let mut bounds = term_buffer.get_bounds();
+                                     let mut saved_msg: String = "Successfully saved at: ".to_owned();
+                                     saved_msg.push_str(&name);
+                                     saved_msg.push_str("\n");
+                                     term_buffer.insert(&mut bounds.1,&saved_msg);
                                     }
                 }
 
@@ -386,7 +393,7 @@ fn build_ui(application: &gtk::Application) {
     // Add "quit" button funtionality
     //
     // Cierra ventana
-    quit.connect_activate(clone!(@weak window , @weak save => move |_| {
+    quit.connect_activate(clone!(@weak window => move |_| {
 
         window.close();
 

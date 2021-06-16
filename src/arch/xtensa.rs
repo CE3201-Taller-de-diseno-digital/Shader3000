@@ -7,7 +7,7 @@
 
 use crate::{
     codegen::{regs::Allocations, Context},
-    ir::{Function, Global, Instruction, Local},
+    ir::{BinOp, Function, Global, Instruction, Local},
 };
 
 use std::{fmt, io};
@@ -148,6 +148,20 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
         let scratch = self.cx.scratch(&mut self.regs, &[reg])?;
         emit!(self.cx, "movi", "{}, {}", scratch, global.as_ref())?;
         emit!(self.cx, "s32i", "{}, {}, 0", reg, scratch)
+    }
+
+    fn not(&mut self, reg: Reg) -> io::Result<()> {
+        let scratch = self.cx.scratch(&mut self.regs, &[reg])?;
+        emit!(self.cx, "movi", "{}, 1", scratch)?;
+        emit!(self.cx, "xor", "{0}, {1}, {0}", reg, scratch)
+    }
+
+    fn negate(&mut self, reg: Reg) -> io::Result<()> {
+        emit!(self.cx, "neg", "{0}, {0}", reg)
+    }
+
+    fn binary(&mut self, lhs: Reg, op: BinOp, rhs: Reg) -> io::Result<()> {
+        todo!()
     }
 
     fn prepare_args(&mut self, arguments: &[Local]) -> io::Result<()> {

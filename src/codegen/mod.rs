@@ -109,8 +109,9 @@ fn emit_body<'a, E: Emitter<'a>>(
     // código muerto con -Wl,--gc-sections en la fase de enlazado
     writeln!(
         output,
-        ".section .text.{0}\n.global {0}\n{0}:",
-        function.name
+        ".section .text.{0}\n.align {1}\n.global {0}\n{0}:",
+        function.name,
+        E::VALUE_SIZE
     )?;
 
     let context = Context {
@@ -178,6 +179,26 @@ fn emit_body<'a, E: Emitter<'a>>(
                 emitter.store_global(reg, global)?;
             }
 
+            Not(local) => {
+                let reg = emitter.read(*local)?;
+                emitter.not(reg)?;
+                emitter.assert_dirty(reg, *local);
+            }
+
+            Negate(local) => {
+                let reg = emitter.read(*local)?;
+                emitter.negate(reg)?;
+                emitter.assert_dirty(reg, *local);
+            }
+
+            Binary(lhs, op, rhs) => {
+                let lhs_reg = emitter.read(*lhs)?;
+                let rhs_reg = emitter.read(*rhs)?;
+
+                emitter.binary(lhs_reg, *op, rhs_reg)?;
+                emitter.assert_dirty(lhs_reg, *lhs);
+            }
+
             Call {
                 target,
                 arguments,
@@ -220,6 +241,9 @@ fn required_locals(instruction: &Instruction) -> u32 {
         LoadConst(_, local) => required(*local),
         LoadGlobal(_, local) => required(*local),
         StoreGlobal(local, _) => required(*local),
+        Not(local) => required(*local),
+        Negate(local) => required(*local),
+        Binary(lhs, _, rhs) => required(*lhs).max(required(*rhs)),
 
         Call {
             arguments, output, ..

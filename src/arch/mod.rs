@@ -8,7 +8,7 @@
 
 use crate::{
     codegen::{regs::Allocations, Context},
-    ir::{Function, Global, Instruction, Local},
+    ir::{BinOp, Function, Global, Instruction, Local},
 };
 
 use std::io;
@@ -75,6 +75,15 @@ pub trait Emitter<'a>: Sized {
 
     /// Copiar los contenidos de un registro a una vriable global.
     fn store_global(&mut self, reg: Self::Register, global: &Global) -> io::Result<()>;
+
+    /// Niega un booleano.
+    fn not(&mut self, reg: Self::Register) -> io::Result<()>;
+
+    /// Calcula el complemento a dos de un entero.
+    fn negate(&mut self, reg: Self::Register) -> io::Result<()>;
+
+    /// Realiza una operación binaria (aritmética o lógica).
+    fn binary(&mut self, lhs: Self::Register, op: BinOp, rhs: Self::Register) -> io::Result<()>;
 
     /// Copia los argumentos de una llamada a sus posiciones
     /// definidas por la convención de llamada.

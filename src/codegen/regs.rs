@@ -138,7 +138,7 @@ impl<'a, E: Emitter<'a>> Context<'a, E> {
         regs.slots
             .iter()
             .filter_map(|slot| match &slot.entry {
-                Some(entry) if entry.local == local => Some(local),
+                Some(entry) if entry.local == local && slot.reg != reg => Some(local),
                 _ => None,
             })
             .next()
@@ -152,7 +152,12 @@ impl<'a, E: Emitter<'a>> Context<'a, E> {
             .find(|slot| slot.reg == reg)
             .expect("bad register");
 
-        assert!(slot.entry.is_none(), "assert_dirty() on occupied register");
+        let occupied = match &slot.entry {
+            Some(entry) => entry.local != local,
+            None => false,
+        };
+
+        assert!(!occupied, "assert_dirty() on occupied register");
         slot.entry = Some(Entry {
             local,
             dirty: true,

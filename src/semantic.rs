@@ -10,7 +10,7 @@ use crate::{
     ir::{self, Function, Global, Instruction, Label, Local},
     lex::Identifier,
     parse,
-    source::Located,
+    source::{Located, Location},
 };
 
 struct SymbolTable<'a> {
@@ -185,7 +185,10 @@ pub enum SemanticError {
     ExpectedType(Type, Type),
 
     #[error("Type mismatch: expected `{0}` or `{1}`, found `{2}`")]
-    ExpectedOneOfTwo(Type, Type, Type),
+    ExpectedTwo(Type, Type, Type),
+
+    #[error("Type mismatch: expected `{0}`, `{1}` or `{2}`, found `{3}`")]
+    ExpectedThree(Type, Type, Type, Type),
 
     #[error("Expected variable, found procedure family `{0}`")]
     ExpectedVar(Identifier),
@@ -207,6 +210,15 @@ pub enum SemanticError {
 
     #[error("Procedure family `{0}` exists, but the overload `{0}({1})` is not defined")]
     NoSuchOverload(Identifier, String),
+
+    #[error("Invalid operands for `{0}`: `{1}` and `{2}`")]
+    InvalidOperands(parse::BinOp, Type, Type),
+
+    #[error("Expected {0} arguments, found {1}")]
+    BadArgumentCount(usize, usize),
+
+    #[error("Floats are not supported by this implementation")]
+    Floats,
 }
 
 impl parse::Ast {
@@ -362,11 +374,80 @@ impl<S: Sink> Context<'_, S> {
 
     fn scan_statements(&mut self, statements: &[parse::Statement]) -> Semantic<()> {
         for statement in statements.iter() {
-            use parse::Statement::*;
+            use parse::{ObjectKind::*, Statement::*, TimeUnit::*};
 
             match statement {
                 If { condition, body } => self.scan_conditional(condition, body)?,
+
+                For {
+                    variable,
+                    iterable,
+                    step,
+                    body,
+                } => {
+                    self.scan_loop(variable, iterable, step.as_ref(), body)?;
+                }
+
                 UserCall { procedure, args } => self.scan_user_call(procedure, args)?,
+
+                Blink {
+                    column,
+                    row,
+                    count,
+                    unit,
+                    state,
+                } => {
+                    let builtin = match unit {
+                        Millis => "builtin_blink_mil",
+                        Seconds => "builtin_blink_seg",
+                        Minutes => "builtin_blink_min",
+                    };
+
+                    let args = [column, row, count, state];
+                    let types = [Type::Int, Type::Int, Type::Int, Type::Bool];
+                    let location = state.location();
+
+                    self.eval_fixed_call(builtin, location, None, &args, &types, None)?;
+                }
+
+                Delay { count, unit } => {
+                    let builtin = match unit {
+                        Millis => "builtin_delay_mil",
+                        Seconds => "builtin_delay_seg",
+                        Minutes => "builtin_delay_min",
+                    };
+
+                    let types = [Type::Int];
+                    let location = count.location();
+                    self.eval_fixed_call(builtin, location, None, &[count], &types, None)?;
+                }
+
+                PrintLed { column, row, value } => {
+                    let args = [column, row, value];
+                    let types = [Type::Int, Type::Int, Type::Bool];
+                    let location = value.location();
+                    let builtin = "builtin_printled";
+
+                    self.eval_fixed_call(builtin, location, None, &args, &types, None)?;
+                }
+
+                PrintLedX {
+                    kind,
+                    index,
+                    object,
+                } => {
+                    let (builtin, object_type) = match kind {
+                        Column => ("builtin_printledx_c", Type::List),
+                        Row => ("builtin_printledx_f", Type::List),
+                        Matrix => ("builtin_printledx_m", Type::Mat),
+                    };
+
+                    let args = [index, object];
+                    let types = [Type::Int, object_type];
+                    let location = object.location();
+
+                    self.eval_fixed_call(builtin, location, None, &args, &types, None)?;
+                }
 
                 _ => todo!(),
             }
@@ -391,6 +472,75 @@ impl<S: Sink> Context<'_, S> {
 
         self.scan_statements(body)?;
         self.sink.push(Instruction::SetLabel(if_false));
+
+        Ok(())
+    }
+
+    fn scan_loop(
+        &mut self,
+        variable: &Located<Identifier>,
+        iterable: &Located<parse::Expr>,
+        step: Option<&Located<parse::Expr>>,
+        body: &[parse::Statement],
+    ) -> Semantic<()> {
+        let limit = self.sink.alloc_local();
+        match self.type_check(iterable)? {
+            Type::Int => drop(self.eval(iterable, limit)?),
+            Type::List | Type::Mat => drop(self.eval_len(iterable, limit)?),
+
+            bad => {
+                return Err(Located::at(
+                    SemanticError::ExpectedThree(Type::Int, Type::List, Type::Mat, bad),
+                    iterable.location().clone(),
+                ))
+            }
+        }
+
+        let iterator = self.sink.alloc_local();
+        self.sink.push(Instruction::LoadConst(0, iterator));
+
+        let step = {
+            let local = self.sink.alloc_local();
+            if let Some(step) = step {
+                self.eval_expecting(step, local, Type::Int)?;
+            } else {
+                self.sink.push(Instruction::LoadConst(1, local));
+            }
+
+            local
+        };
+
+        let condition_label = self.sink.next_label();
+        let end_label = self.sink.next_label();
+
+        self.sink.push(Instruction::SetLabel(condition_label));
+        self.ephemeral(|this, is_less| {
+            let op = ir::BinOp::Logic(ir::LogicOp::Less);
+            this.sink.push(Instruction::Move(iterator, is_less));
+            this.sink.push(Instruction::Binary(is_less, op, limit));
+            this.sink.push(Instruction::JumpIfFalse(is_less, end_label));
+
+            Ok((Type::Bool, Ownership::Owned, ()))
+        })?;
+
+        self.subscope(|this| {
+            let named = Named::Var(Variable {
+                access: Access::Local(iterator),
+                typ: Type::Int,
+            });
+
+            this.scope.symbols.insert(variable.as_ref().clone(), named);
+            this.scan_statements(body)
+        })?;
+
+        let op = ir::BinOp::Arithmetic(ir::ArithmeticOp::Add);
+        self.sink.push(Instruction::Binary(iterator, op, step));
+        self.sink.push(Instruction::Jump(condition_label));
+        self.sink.push(Instruction::SetLabel(end_label));
+
+        self.sink.free_local(step);
+        self.sink.free_local(limit);
+        self.sink.free_local(iterator);
 
         Ok(())
     }
@@ -471,6 +621,57 @@ impl<S: Sink> Context<'_, S> {
         Ok(typ)
     }
 
+    fn eval_fixed_call(
+        &mut self,
+        builtin: &'static str,
+        at: &Location,
+        subject: Option<Local>,
+        args: &[&Located<parse::Expr>],
+        types: &[Type],
+        output: Option<Local>,
+    ) -> Semantic<()> {
+        if args.len() != types.len() {
+            return Err(Located::at(
+                SemanticError::BadArgumentCount(types.len(), args.len()),
+                at.clone(),
+            ));
+        }
+
+        let mut arg_locals = Vec::new();
+        let mut ownerships = Vec::new();
+
+        if let Some(subject) = subject {
+            arg_locals.push(subject);
+        }
+
+        for (arg, typ) in args.iter().copied().zip(types.iter()) {
+            let local = self.sink.alloc_local();
+            let ownership = self.eval_expecting(arg, local, *typ)?;
+
+            arg_locals.push(local);
+            ownerships.push(ownership);
+        }
+
+        self.sink.push(Instruction::Call {
+            target: Function::External(builtin),
+            arguments: arg_locals.clone(),
+            output,
+        });
+
+        let dropped = arg_locals
+            .into_iter()
+            .skip(subject.iter().count())
+            .zip(ownerships.into_iter())
+            .zip(types.iter().cloned());
+
+        for ((local, ownership), typ) in dropped {
+            self.drop(local, typ, ownership);
+            self.sink.free_local(local);
+        }
+
+        Ok(())
+    }
+
     fn eval_owned(&mut self, expr: &Located<parse::Expr>, into: Local) -> Semantic<Type> {
         use Ownership::{Borrowed, Owned};
 
@@ -534,25 +735,124 @@ impl<S: Sink> Context<'_, S> {
             Read(target) => self.read(target, into),
 
             Len(expr) => {
-                self.scan_len(expr, into)?;
+                self.eval_len(expr, into)?;
                 Ok((Type::Int, Owned))
             }
 
             Range(length, value) => {
-                self.scan_range(length, value, into)?;
+                let builtin = "builtin_range";
+                let args = [&**length, &**value];
+                let types = [Type::Int, Type::Bool];
+                let location = value.location();
+
+                self.eval_fixed_call(builtin, location, None, &args, &types, Some(into))?;
                 Ok((Type::List, Owned))
             }
 
             List(items) => {
-                let typ = self.build_sequence(&items, into)?;
+                let typ = self.eval_sequence(&items, into)?;
                 Ok((typ, Owned))
             }
 
-            _ => todo!(),
+            Negate(expr) => {
+                self.eval_expecting(expr, into, Type::Int)?;
+                self.sink.push(Instruction::Negate(into));
+
+                Ok((Type::Int, Owned))
+            }
+
+            Binary { lhs, op, rhs, .. } => {
+                let typ = self.eval_binary(expr.location(), lhs, *op, rhs, into)?;
+                Ok((typ, Owned))
+            }
         }
     }
 
-    fn scan_len(&mut self, expr: &Located<parse::Expr>, into: Local) -> Semantic<()> {
+    fn eval_binary(
+        &mut self,
+        at: &Location,
+        lhs: &Located<parse::Expr>,
+        op: parse::BinOp,
+        rhs: &Located<parse::Expr>,
+        into: Local,
+    ) -> Semantic<Type> {
+        self.ephemeral(|this, rhs_local| {
+            let (typ, lhs_ownership) = this.eval(lhs, into)?;
+            let rhs_ownership = match this.eval(rhs, rhs_local)? {
+                (rhs_typ, _) if rhs_typ != typ => {
+                    return Err(Located::at(
+                        SemanticError::InvalidOperands(op, typ, rhs_typ),
+                        at.clone(),
+                    ))
+                }
+
+                (_, rhs_ownership) => rhs_ownership,
+            };
+
+            use ir::{ArithmeticOp, BinOp as IrOp, LogicOp};
+            use parse::BinOp as ParseOp;
+            use Type::*;
+
+            let op = match (op, typ) {
+                (ParseOp::Add, Int) => IrOp::Arithmetic(ArithmeticOp::Add),
+                (ParseOp::Sub, Int) => IrOp::Arithmetic(ArithmeticOp::Sub),
+                (ParseOp::Mul, Int) => IrOp::Arithmetic(ArithmeticOp::Mul),
+                (ParseOp::Mod, Int) => IrOp::Arithmetic(ArithmeticOp::Mod),
+                (ParseOp::IntegerDiv, Int) => IrOp::Arithmetic(ArithmeticOp::Div),
+
+                (ParseOp::Equal, Int | Bool) => IrOp::Logic(LogicOp::Equal),
+                (ParseOp::NotEqual, Int | Bool) => IrOp::Logic(LogicOp::NotEqual),
+                (ParseOp::Greater, Int | Bool) => IrOp::Logic(LogicOp::Greater),
+                (ParseOp::GreaterOrEqual, Int | Bool) => IrOp::Logic(LogicOp::GreaterOrEqual),
+                (ParseOp::Less, Int | Bool) => IrOp::Logic(LogicOp::Less),
+                (ParseOp::LessOrEqual, Int | Bool) => IrOp::Logic(LogicOp::LessOrEqual),
+
+                (ParseOp::Equal | ParseOp::NotEqual, List | Mat) => {
+                    let comparator = if typ == List {
+                        "builtin_cmp_list"
+                    } else {
+                        "builtin_cmp_mat"
+                    };
+
+                    this.ephemeral(|this, lhs_local| {
+                        this.sink.push(Instruction::Move(into, lhs_local));
+                        this.sink.push(Instruction::Call {
+                            target: Function::External(comparator),
+                            arguments: vec![lhs_local, rhs_local],
+                            output: Some(into),
+                        });
+
+                        Ok((typ, lhs_ownership, ()))
+                    })?;
+
+                    if op == ParseOp::NotEqual {
+                        this.sink.push(Instruction::Not(into));
+                    }
+
+                    return Ok((typ, rhs_ownership, Bool));
+                }
+
+                (ParseOp::Div, Int) => return Err(Located::at(SemanticError::Floats, at.clone())),
+
+                _ => {
+                    return Err(Located::at(
+                        SemanticError::InvalidOperands(op, typ, typ),
+                        at.clone(),
+                    ))
+                }
+            };
+
+            let result_type = match op {
+                IrOp::Arithmetic(_) => Int,
+                IrOp::Logic(_) => Bool,
+            };
+
+            this.sink.push(Instruction::Binary(into, op, rhs_local));
+            Ok((typ, rhs_ownership, result_type))
+        })
+    }
+
+    fn eval_len(&mut self, expr: &Located<parse::Expr>, into: Local) -> Semantic<()> {
         self.ephemeral(|this, arg| {
             let (arg_type, arg_ownership) = this.eval(expr, arg)?;
             let target = match arg_type {
@@ -561,7 +861,7 @@ impl<S: Sink> Context<'_, S> {
 
                 _ => {
                     return Err(Located::at(
-                        SemanticError::ExpectedOneOfTwo(Type::List, Type::Mat, arg_type),
+                        SemanticError::ExpectedTwo(Type::List, Type::Mat, arg_type),
                         expr.location().clone(),
                     ))
                 }
@@ -577,33 +877,7 @@ impl<S: Sink> Context<'_, S> {
         })
     }
 
-    fn scan_range(
-        &mut self,
-        length: &Located<parse::Expr>,
-        value: &Located<parse::Expr>,
-        into: Local,
-    ) -> Semantic<()> {
-        self.ephemeral(|this, length_local| {
-            this.ephemeral(|this, value_local| {
-                this.eval_expecting(length, length_local, Type::Int)?;
-                this.eval_expecting(value, value_local, Type::Bool)?;
-
-                this.sink.push(Instruction::Call {
-                    target: Function::External("builtin_range"),
-                    arguments: vec![length_local, value_local],
-                    output: Some(into),
-                });
-
-                Ok((
-                    Type::Bool,
-                    Ownership::Owned,
-                    (Type::Int, Ownership::Owned, ()),
-                ))
-            })
-        })
-    }
-
-    fn build_sequence(&mut self, items: &[Located<parse::Expr>], into: Local) -> Semantic<Type> {
+    fn eval_sequence(&mut self, items: &[Located<parse::Expr>], into: Local) -> Semantic<Type> {
         let item = self.sink.alloc_local();
 
         let is_mat = match items.first() {
@@ -615,7 +889,7 @@ impl<S: Sink> Context<'_, S> {
 
                 bad => {
                     return Err(Located::at(
-                        SemanticError::ExpectedOneOfTwo(Type::Bool, Type::List, bad),
+                        SemanticError::ExpectedTwo(Type::Bool, Type::List, bad),
                         first.location().clone(),
                     ))
                 }
@@ -648,13 +922,10 @@ impl<S: Sink> Context<'_, S> {
             self.sink.push(Instruction::LoadConst(i as i32, index));
 
             let (insert, expected, arguments) = if is_mat {
-                (
-                    "builtin_insert_mat",
-                    Type::List,
-                    vec![item, zero.unwrap(), index],
-                )
+                let arguments = vec![into, item, zero.unwrap(), index];
+                ("builtin_insert_mat", Type::List, arguments)
             } else {
-                ("builtin_insert_list", Type::Bool, vec![index, item])
+                ("builtin_insert_list", Type::Bool, vec![into, index, item])
             };
 
             let ownership = self.eval_expecting(expr, item, expected)?;
@@ -702,11 +973,90 @@ impl<S: Sink> Context<'_, S> {
                 .push(Instruction::LoadGlobal(global.clone(), into)),
         }
 
-        if !target.indices().is_empty() {
-            todo!()
+        let mut typ = var.typ;
+        let mut ownership = Ownership::Borrowed;
+
+        for index in target.indices() {
+            use parse::Index;
+
+            let expect_mat = || {
+                (typ == Type::Mat).then(|| ()).ok_or_else(|| {
+                    Located::at(
+                        SemanticError::ExpectedType(Type::Mat, typ),
+                        target.var().location().clone(),
+                    )
+                })
+            };
+
+            let expect_list_or_mat = || {
+                (typ == Type::List || typ == Type::Mat)
+                    .then(|| ())
+                    .ok_or_else(|| {
+                        Located::at(
+                            SemanticError::ExpectedTwo(Type::List, Type::Mat, typ),
+                            target.var().location().clone(),
+                        )
+                    })
+            };
+
+            let (builtin, next_type, args) = match index.as_ref() {
+                Index::Single(expr) => {
+                    expect_list_or_mat()?;
+                    let (builtin, next_type) = if typ == Type::List {
+                        ("builtin_index_list", Type::Bool)
+                    } else {
+                        ("builtin_index_row_mat", Type::List)
+                    };
+
+                    (builtin, next_type, vec![expr])
+                }
+
+                Index::Range(from, to) => {
+                    expect_list_or_mat()?;
+                    let builtin = if typ == Type::List {
+                        "builtin_slice_list"
+                    } else {
+                        "builtin_slice_mat"
+                    };
+
+                    (builtin, typ, vec![from, to])
+                }
+
+                Index::Indirect(row, column) => {
+                    expect_mat()?;
+                    ("builtin_index_entry_mat", Type::Bool, vec![row, column])
+                }
+
+                Index::Transposed(column) => {
+                    expect_mat()?;
+                    ("builtin_index_column_mat", Type::List, vec![column])
+                }
+            };
+
+            const TYPES: [Type; 2] = [Type::Int, Type::Int];
+
+            let location = index.location();
+            let types = &TYPES[..args.len()];
+
+            if destructor(typ, ownership).is_none() {
+                self.eval_fixed_call(builtin, location, Some(into), &args, types, Some(into))?;
+            } else {
+                self.ephemeral(|this, local| {
+                    this.eval_fixed_call(builtin, location, Some(into), &args, types, Some(local))?;
+
+                    this.drop(into, typ, ownership);
+                    this.sink.push(Instruction::Move(local, into));
+
+                    // Se tomó ownership con Instruction::Move(), no se debe hacer drop
+                    Ok((Type::Int, Ownership::Borrowed, ()))
+                })?;
+            }
+
+            ownership = Ownership::Owned;
+            typ = next_type;
         }
 
-        Ok((var.typ, Ownership::Borrowed))
+        Ok((typ, ownership))
     }
 
     fn expire(mut self) -> S {
@@ -762,15 +1112,7 @@ impl<S: Sink> Context<'_, S> {
     }
 
     fn drop(&mut self, local: Local, typ: Type, ownership: Ownership) {
-        let destructor = match (typ, ownership) {
-            (_, Ownership::Borrowed) => None,
-            (Type::Int, _) => None,
-            (Type::Bool, _) => None,
-            (Type::List, Ownership::Owned) => Some("builtin_drop_list"),
-            (Type::Mat, Ownership::Owned) => Some("builtin_drop_mat"),
-        };
-
-        if let Some(destructor) = destructor {
+        if let Some(destructor) = destructor(typ, ownership) {
             self.sink.push(Instruction::Call {
                 target: Function::External(destructor),
                 arguments: vec![local],
@@ -796,6 +1138,16 @@ fn break_assignment<'a>(
         SemanticError::UnbalancedAssignment,
         error_location.clone(),
     ))
+}
+
+fn destructor(typ: Type, ownership: Ownership) -> Option<&'static str> {
+    match (typ, ownership) {
+        (_, Ownership::Borrowed) => None,
+        (Type::Int, _) => None,
+        (Type::Bool, _) => None,
+        (Type::List, Ownership::Owned) => Some("builtin_drop_list"),
+        (Type::Mat, Ownership::Owned) => Some("builtin_drop_mat"),
+    }
 }
 
 fn mangle(name: &Identifier, types: &[Type]) -> String {

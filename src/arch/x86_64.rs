@@ -2,7 +2,7 @@
 
 use crate::{
     codegen::{regs::Allocations, Context},
-    ir::{Function, Global, Instruction, Local},
+    ir::{ArithmeticOp, BinOp, Function, Global, Instruction, Local, LogicOp},
 };
 
 use std::{fmt, io};
@@ -44,20 +44,54 @@ impl Reg {
         })
     }
 
+    /// Obtiene la forma de 64 bits de un registro x86.
+    fn as_qword(self) -> &'static str {
+        use Reg::*;
+
+        match self {
+            Rax => "%rax",
+            Rcx => "%rcx",
+            Rdx => "%rdx",
+            Rsi => "%rsi",
+            Rdi => "%rdi",
+            R8 => "%r8",
+            R9 => "%r9",
+            R10 => "%r10",
+            R11 => "%r11",
+        }
+    }
+
     /// Obtiene la forma de 32 bits de un registro x86.
     fn as_dword(self) -> &'static str {
         use Reg::*;
 
         match self {
-            Rax => "eax",
-            Rcx => "ecx",
-            Rdx => "edx",
-            Rsi => "esi",
-            Rdi => "edi",
-            R8 => "r8d",
-            R9 => "r9d",
-            R10 => "r10d",
-            R11 => "r11d",
+            Rax => "%eax",
+            Rcx => "%ecx",
+            Rdx => "%edx",
+            Rsi => "%esi",
+            Rdi => "%edi",
+            R8 => "%r8d",
+            R9 => "%r9d",
+            R10 => "%r10d",
+            R11 => "%r11d",
+        }
+    }
+
+    /// Obtiene la forma de 8 bits de un registro x86.
+    fn as_byte(self) -> &'static str {
+        use Reg::*;
+
+        match self {
+            Rax => "%al",
+            Rcx => "%cl",
+            Rdx => "%dl",
+            Rsi => "%sil",
+            Rdi => "%dil",
+            R8 => "%r8b",
+            R9 => "%r9b",
+            R10 => "%r10b",
+            R11 => "%r11b",
         }
     }
 }
@@ -78,22 +112,8 @@ impl super::Register for Reg {
 }
 
 impl fmt::Display for Reg {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        use Reg::*;
-
-        let name = match self {
-            Rax => "rax",
-            Rcx => "rcx",
-            Rdx => "rdx",
-            Rsi => "rsi",
-            Rdi => "rdi",
-            R8 => "r8",
-            R9 => "r9",
-            R10 => "r10",
-            R11 => "r11",
-        };
-
-        formatter.write_str(name)
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt.write_str(self.as_qword())
     }
 }
 
@@ -106,6 +126,11 @@ pub struct Emitter<'a> {
 /// Información que debe preservarse durante una llamada.
 pub struct CallInfo {
     rsp_offset: u32,
+}
+
+enum Division {
+    Quotient,
+    Remainder,
 }
 
 impl<'a> super::Emitter<'a> for Emitter<'a> {
@@ -158,26 +183,69 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
     }
 
     fn jump_if_false(&mut self, reg: Reg, label: &str) -> io::Result<()> {
-        emit!(self.cx, "testl", "%{0}, %{0}", reg.as_dword())?;
+        emit!(self.cx, "test", "{0}, {0}", reg.as_dword())?;
         emit!(self.cx, "jz", "{}", label)
     }
 
     fn load_const(&mut self, value: i32, reg: Reg) -> io::Result<()> {
         if value == 0 {
-            emit!(self.cx, "xor", "%{0}, %{0}", reg.as_dword())
+            emit!(self.cx, "xor", "{0}, {0}", reg.as_dword())
         } else if value > 0 {
-            emit!(self.cx, "mov", "${}, %{}", value, reg.as_dword())
+            emit!(self.cx, "mov", "${}, {}", value, reg.as_dword())
         } else {
-            emit!(self.cx, "mov", "${}, %{}", value, reg)
+            emit!(self.cx, "mov", "${}, {}", value, reg)
         }
     }
 
     fn load_global(&mut self, global: &Global, reg: Reg) -> io::Result<()> {
-        emit!(self.cx, "mov", "{}(%rip), %{}", global.as_ref(), reg)
+        emit!(self.cx, "mov", "{}(%rip), {}", global.as_ref(), reg)
     }
 
     fn store_global(&mut self, reg: Reg, global: &Global) -> io::Result<()> {
-        emit!(self.cx, "mov", "%{}, {}(%rip)", reg, global.as_ref())
+        emit!(self.cx, "mov", "{}, {}(%rip)", reg, global.as_ref())
+    }
+
+    fn not(&mut self, reg: Reg) -> io::Result<()> {
+        emit!(self.cx, "xor", "$1, {}", reg.as_dword())
+    }
+
+    fn negate(&mut self, reg: Reg) -> io::Result<()> {
+        emit!(self.cx, "neg", "{}", reg)
+    }
+
+    fn binary(&mut self, lhs: Reg, op: BinOp, rhs: Reg) -> io::Result<()> {
+        match op {
+            BinOp::Arithmetic(op) => {
+                use ArithmeticOp::*;
+
+                let instruction = match op {
+                    Add => "add",
+                    Sub => "sub",
+                    Mul => "imul",
+                    Div => return self.div_or_mod(lhs, rhs, Division::Quotient),
+                    Mod => return self.div_or_mod(lhs, rhs, Division::Remainder),
+                };
+
+                emit!(self.cx, instruction, "{}, {}", rhs, lhs)
+            }
+
+            BinOp::Logic(op) => {
+                use LogicOp::*;
+
+                let set = match op {
+                    Equal => "sete",
+                    NotEqual => "setne",
+                    Greater => "setg",
+                    GreaterOrEqual => "setge",
+                    Less => "setl",
+                    LessOrEqual => "setle",
+                };
+
+                emit!(self.cx, "cmp", "{}, {}", rhs, lhs)?;
+                emit!(self.cx, set, "{}", lhs.as_byte())?;
+                emit!(self.cx, "movzx", "{}, {}", lhs.as_byte(), lhs)
+            }
+        }
     }
 
     fn prepare_args(&mut self, arguments: &[Local]) -> io::Result<CallInfo> {
@@ -222,23 +290,47 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
 
     fn reg_to_local(cx: &Context<'a, Self>, reg: Reg, local: Local) -> io::Result<()> {
         let address = Self::local_address(cx, local);
-        emit!(cx, "mov", "%{}, {}", reg, address)
+        emit!(cx, "mov", "{}, {}", reg, address)
     }
 
     fn local_to_reg(cx: &Context<'a, Self>, local: Local, reg: Reg) -> io::Result<()> {
         let address = Self::local_address(cx, local);
-        emit!(cx, "mov", "{}, %{}", address, reg)
+        emit!(cx, "mov", "{}, {}", address, reg)
     }
 
     fn reg_to_reg(cx: &Context<'a, Self>, source: Reg, target: Reg) -> io::Result<()> {
-        emit!(cx, "mov", "%{}, %{}", source, target)
+        emit!(cx, "mov", "{}, {}", source, target)
     }
 }
 
 impl<'a> Emitter<'a> {
+    fn div_or_mod(&mut self, lhs: Reg, rhs: Reg, mode: Division) -> io::Result<()> {
+        emit!(self.cx, "push", "%rax")?;
+        emit!(self.cx, "push", "%rdx")?;
+
+        let location = |reg| match reg {
+            Reg::Rax => "8(%rsp)",
+            Reg::Rdx => "(%rsp)",
+            _ => reg.as_qword(),
+        };
+
+        emit!(self.cx, "mov", "{}, %rax", location(lhs))?;
+        emit!(self.cx, "cqo")?;
+        emit!(self.cx, "idivq", "{}", location(rhs))?;
+
+        let result = match mode {
+            Division::Quotient => Reg::Rax,
+            Division::Remainder => Reg::Rdx,
+        };
+
+        emit!(self.cx, "mov", "{}, {}", result, location(lhs))?;
+        emit!(self.cx, "pop", "%rdx")?;
+        emit!(self.cx, "pop", "%rax")
+    }
+
     /// Agrega un offset al puntero de stack.
     fn move_rsp(&mut self, offset: i32) -> io::Result<()> {
-        let instruction = if offset < 0 { "subq" } else { "addq" };
+        let instruction = if offset < 0 { "sub" } else { "add" };
         let offset = offset.abs() * VALUE_SIZE as i32;
         emit!(self.cx, instruction, "$0x{:x}, %rsp", offset)
     }
