@@ -738,7 +738,7 @@ impl<S: Sink> Context<'_, S> {
             }
 
             Read(target) => self.read(target, into),
-            Attr(target, attr) => self.read_attr(target, attr, into),
+            Attr(base, attr) => self.eval_attr(base, attr, into),
 
             Len(expr) => {
                 self.eval_len(expr, into)?;
@@ -958,47 +958,40 @@ impl<S: Sink> Context<'_, S> {
         }
     }
 
-    fn read_attr(
+    fn eval_attr(
         &mut self,
-        target: &parse::Target,
+        base: &Located<parse::Expr>,
         attr: &Located<Identifier>,
         into: Local,
     ) -> Semantic<(Type, Ownership)> {
-        self.ephemeral(|this, base| {
-            let (typ, ownership) = this.read(target, base)?;
+        const ATTRS: &'static [((Type, NoCase<&'static str>), (&'static str, Type))] = &[
+            (
+                (Type::Mat, NoCase::new("shapeF")),
+                ("builtin_shapef", Type::Int),
+            ),
+            (
+                (Type::Mat, NoCase::new("shapeC")),
+                ("builtin_shapec", Type::Int),
+            ),
+        ];
 
-            const ATTRS: &'static [((Type, NoCase<&'static str>), (&'static str, Type))] = &[
-                (
-                    (Type::Mat, NoCase::new("shapeF")),
-                    ("builtin_shapef", Type::Int),
-                ),
-                (
-                    (Type::Mat, NoCase::new("shapeC")),
-                    ("builtin_shapec", Type::Int),
-                ),
-            ];
+        let typ = self.type_check(base)?;
 
-            let attr_name = NoCase::new(attr.as_ref().as_ref());
-            let (getter, result) = ATTRS
-                .iter()
-                .find(|(key, _)| *key == (typ, attr_name))
-                .map(|(_, value)| value)
-                .copied()
-                .ok_or_else(|| {
-                    Located::at(
-                        SemanticError::NoSuchAttr(typ, attr.as_ref().clone()),
-                        attr.location().clone(),
-                    )
-                })?;
+        let attr_name = NoCase::new(attr.as_ref().as_ref());
+        let (getter, result) = ATTRS
+            .iter()
+            .find(|(key, _)| *key == (typ, attr_name))
+            .map(|(_, value)| value)
+            .copied()
+            .ok_or_else(|| {
+                Located::at(
+                    SemanticError::NoSuchAttr(typ, attr.as_ref().clone()),
+                    attr.location().clone(),
+                )
+            })?;
 
-            this.sink.push(Instruction::Call {
-                target: Function::External(getter),
-                arguments: vec![base],
-                output: Some(into),
-            });
-
-            Ok((typ, ownership, (result, Ownership::Owned)))
-        })
+        self.eval_fixed_call(getter, attr.location(), None, &[base], &[typ], Some(into))?;
+        Ok((result, Ownership::Owned))
     }
 
     fn read(&mut self, target: &parse::Target, into: Local) -> Semantic<(Type, Ownership)> {
