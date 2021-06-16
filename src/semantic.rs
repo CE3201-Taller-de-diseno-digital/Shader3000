@@ -150,13 +150,15 @@ impl Sink for Listing {
     }
 
     fn free_local(&mut self, local: Local) {
-        debug_assert!(
+        assert!(
             local.0 < self.next_local.0
                 && self
                     .free_locals
                     .iter()
                     .find(|&&other| other == local)
-                    .is_none()
+                    .is_none(),
+            "bad free_local(): {:?}",
+            local
         );
 
         self.free_locals.push(local);
@@ -540,7 +542,7 @@ impl<S: Sink> Context<'_, S> {
 
         self.sink.free_local(step);
         self.sink.free_local(limit);
-        self.sink.free_local(iterator);
+        // iterator es liberado por expire()
 
         Ok(())
     }

@@ -35,11 +35,8 @@
 //! prueba. Ello requiere definir `#[no_mangle] extern "C" fn user_main() {}`
 //! e invocar a [`handover()`].
 
-#![cfg_attr(
-    target_arch = "xtensa",
-    no_std,
-    feature(default_alloc_error_handler, get_mut_unchecked)
-)]
+#![feature(get_mut_unchecked)]
+#![cfg_attr(target_arch = "xtensa", no_std, feature(default_alloc_error_handler))]
 
 extern crate alloc;
 
