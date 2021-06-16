@@ -38,6 +38,12 @@ fn main() -> anyhow::Result<()> {
                 .short('S')
                 .about("Generate assembly instead of linking"),
         )
+        .arg(
+            Arg::new("ir")
+                .short('R')
+                .long("ir")
+                .about("Show IR instead of linking"),
+        )
         .arg(Arg::new("strip").short('s').about("Strip executables"))
         .arg(
             Arg::new("output")
@@ -60,6 +66,7 @@ fn main() -> anyhow::Result<()> {
     let platform = Platform::from_str(&platform).expect("main.rs allowed a bad target");
     let arch = platform.arch();
     let asm = args.is_present("asm");
+    let ir = args.is_present("ir");
     let output = args.value_of("output").unwrap();
     let input = args.value_of("input").unwrap();
 
@@ -91,6 +98,11 @@ fn main() -> anyhow::Result<()> {
             return Ok(());
         }
     };
+
+    if ir {
+        dump_ir(&program);
+        return Ok(());
+    }
 
     match (asm, output) {
         // Salida a stdout sin enlazado
@@ -147,4 +159,17 @@ fn frontend_pipeline<R: BufRead>(reader: &mut R, name: &str) -> Result<Program, 
 
     ast.resolve()
         .map_err(|error| Diagnostics::from(error).kind("Semantic error"))
+}
+
+fn dump_ir(ir: &Program) {
+    for global in ir.globals.iter() {
+        println!("[GLOBAL {}]", global.as_ref());
+    }
+
+    for procedure in ir.code.iter() {
+        println!("[PROC {}/{}]", procedure.name, procedure.parameters);
+        for (i, instruction) in procedure.body.iter().enumerate() {
+            println!("\t{:03x} {:?}", i, instruction);
+        }
+    }
 }
