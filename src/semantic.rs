@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     ir::{self, Function, Global, Instruction, Label, Local},
-    lex::Identifier,
+    lex::{Identifier, NoCase},
     parse,
     source::{Located, Location},
 };
@@ -218,6 +218,9 @@ pub enum SemanticError {
 
     #[error("Expected {0} arguments, found {1}")]
     BadArgumentCount(usize, usize),
+
+    #[error("Objects of type `{0}` have no attribute `{1}`")]
+    NoSuchAttr(Type, Identifier),
 
     #[error("Floats are not supported by this implementation")]
     Floats,
@@ -735,7 +738,7 @@ impl<S: Sink> Context<'_, S> {
             }
 
             Read(target) => self.read(target, into),
-            Attr(_target, _attr) => todo!(),
+            Attr(target, attr) => self.read_attr(target, attr, into),
 
             Len(expr) => {
                 self.eval_len(expr, into)?;
@@ -953,6 +956,49 @@ impl<S: Sink> Context<'_, S> {
         } else {
             Ok(Type::List)
         }
+    }
+
+    fn read_attr(
+        &mut self,
+        target: &parse::Target,
+        attr: &Located<Identifier>,
+        into: Local,
+    ) -> Semantic<(Type, Ownership)> {
+        self.ephemeral(|this, base| {
+            let (typ, ownership) = this.read(target, base)?;
+
+            const ATTRS: &'static [((Type, NoCase<&'static str>), (&'static str, Type))] = &[
+                (
+                    (Type::Mat, NoCase::new("shapeF")),
+                    ("builtin_shapef", Type::Int),
+                ),
+                (
+                    (Type::Mat, NoCase::new("shapeC")),
+                    ("builtin_shapec", Type::Int),
+                ),
+            ];
+
+            let attr_name = NoCase::new(attr.as_ref().as_ref());
+            let (getter, result) = ATTRS
+                .iter()
+                .find(|(key, _)| *key == (typ, attr_name))
+                .map(|(_, value)| value)
+                .copied()
+                .ok_or_else(|| {
+                    Located::at(
+                        SemanticError::NoSuchAttr(typ, attr.as_ref().clone()),
+                        attr.location().clone(),
+                    )
+                })?;
+
+            this.sink.push(Instruction::Call {
+                target: Function::External(getter),
+                arguments: vec![base],
+                output: Some(into),
+            });
+
+            Ok((typ, ownership, (result, Ownership::Owned)))
+        })
     }
 
     fn read(&mut self, target: &parse::Target, into: Local) -> Semantic<(Type, Ownership)> {
