@@ -735,6 +735,7 @@ impl<S: Sink> Context<'_, S> {
             }
 
             Read(target) => self.read(target, into),
+            Attr(_target, _attr) => todo!(),
 
             Len(expr) => {
                 self.eval_len(expr, into)?;

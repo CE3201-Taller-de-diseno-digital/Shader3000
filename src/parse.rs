@@ -148,6 +148,7 @@ pub enum Expr {
     False,
     Integer(i32),
     Read(Target),
+    Attr(Target, Located<Identifier>),
     Len(Box<Located<Expr>>),
     Range(Box<Located<Expr>>, Box<Located<Expr>>),
     List(Vec<Located<Expr>>),
@@ -687,6 +688,23 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
         Ok((id, args))
     }
 
+    fn target_or_attribute(&mut self) -> Parse<Located<Expr>> {
+        let (location, target) = self.target()?.split();
+
+        let (expr, location) = match self.optional(|s| s.expect(Token::Period).weak())? {
+            None => (Expr::Read(target), location),
+
+            Some(()) => {
+                let attribute = self.id()?;
+                let location = Location::span(location, attribute.location());
+
+                (Expr::Attr(target, attribute), location)
+            }
+        };
+
+        Ok(Located::at(expr, location))
+    }
+
     fn target(&mut self) -> Parse<Located<Target>> {
         let variable = self.id()?;
 
@@ -846,10 +864,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
                 (Expr::List(items), Location::span(start, &self.last_known))
             }
 
-            Token::Id(_) => {
-                let (location, target) = self.target()?.split();
-                (Expr::Read(target), location)
-            }
+            Token::Id(_) => return self.target_or_attribute(),
 
             _ => {
                 let token = self.next()?.into_inner();
