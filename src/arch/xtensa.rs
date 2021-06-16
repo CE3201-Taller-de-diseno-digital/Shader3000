@@ -7,7 +7,7 @@
 
 use crate::{
     codegen::{regs::Allocations, Context},
-    ir::{BinOp, Function, Global, Instruction, Local},
+    ir::{ArithmeticOp, BinOp, Function, Global, Instruction, Local, LogicOp},
 };
 
 use std::{fmt, io};
@@ -161,7 +161,57 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
     }
 
     fn binary(&mut self, lhs: Reg, op: BinOp, rhs: Reg) -> io::Result<()> {
-        todo!()
+        match op {
+            BinOp::Arithmetic(op) => {
+                use ArithmeticOp::*;
+
+                let instruction = match op {
+                    Add => "add",
+                    Sub => "sub",
+                    Mul => "mull",
+                    Div => return self.runtime_op(lhs, rhs, "__divsi3"),
+                    Mod => return self.runtime_op(lhs, rhs, "__modsi3"),
+                };
+
+                emit!(self.cx, instruction, "{}, {}, {}", lhs, lhs, rhs)
+            }
+
+            BinOp::Logic(op) => {
+                use LogicOp::*;
+
+                let label = self.cx.next_label();
+                let scratch = self.cx.scratch(&mut self.regs, &[lhs, rhs])?;
+
+                let (instruction, left, right) = match op {
+                    // !(a != b)
+                    Equal => ("bne", scratch, rhs),
+
+                    // !(a == b)
+                    NotEqual => ("beq", scratch, rhs),
+
+                    // !(b >= a)
+                    Greater => ("bge", rhs, scratch),
+
+                    // !(a < b)
+                    GreaterOrEqual => ("blt", scratch, rhs),
+
+                    // !(a >= b)
+                    Less => ("bge", scratch, rhs),
+
+                    // !(b < a)
+                    LessOrEqual => ("blt", rhs, scratch),
+                };
+
+                Self::reg_to_reg(&self.cx, lhs, scratch)?;
+                self.load_const(0, lhs)?;
+
+                let formatted = format_label!(self.cx, label);
+                emit!(self.cx, instruction, "{}, {}, {}", left, right, formatted)?;
+
+                self.load_const(1, lhs)?;
+                emit_label!(self.cx, label)
+            }
+        }
     }
 
     fn prepare_args(&mut self, arguments: &[Local]) -> io::Result<()> {
@@ -199,6 +249,26 @@ impl<'a> super::Emitter<'a> for Emitter<'a> {
 }
 
 impl<'a> Emitter<'a> {
+    fn runtime_op(&mut self, lhs: Reg, rhs: Reg, function: &'static str) -> io::Result<()> {
+        use super::Emitter;
+
+        self.spill()?;
+
+        emit!(self.cx, "s32i", "{}, a1, -4", lhs)?;
+        emit!(self.cx, "s32i", "{}, a1, -8", rhs)?;
+        emit!(self.cx, "l32i", "a2, a1, -4")?;
+        emit!(self.cx, "l32i", "a3, a1, -8")?;
+
+        self.clear()?;
+        emit!(self.cx, "call0", "{}", function)?;
+
+        if lhs != Reg(2) {
+            Self::reg_to_reg(&self.cx, Reg(2), lhs)?;
+        }
+
+        Ok(())
+    }
+
     /// Corrige el registro de puntero de stack.
     fn move_sp(&self, offset: i32) -> io::Result<()> {
         emit!(self.cx, "addi", "a1, a1, {}", offset * VALUE_SIZE as i32)

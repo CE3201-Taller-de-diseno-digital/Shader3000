@@ -54,6 +54,7 @@ pub struct Context<'a, E: Emitter<'a>> {
     function: &'a GeneratedFunction,
     output: RefCell<&'a mut dyn Write>,
     locals: u32,
+    next_label: u32,
     frame_info: E::FrameInfo,
 }
 
@@ -88,6 +89,13 @@ impl<'a, E: Emitter<'a>> Context<'a, E> {
     pub fn with_frame_info(self, frame_info: E::FrameInfo) -> Self {
         Context { frame_info, ..self }
     }
+
+    pub fn next_label(&mut self) -> Label {
+        let next_label = self.next_label;
+        self.next_label += 1;
+
+        Label(next_label)
+    }
 }
 
 /// Emite cada una de las instrucciones de una función no externa.
@@ -97,13 +105,14 @@ fn emit_body<'a, E: Emitter<'a>>(
     output: &'a mut dyn Write,
     function: &'a GeneratedFunction,
 ) -> io::Result<()> {
-    let locals = function
-        .body
-        .iter()
-        .map(required_locals)
-        .max()
-        .unwrap_or(0)
-        .max(function.parameters);
+    let (locals, agnostic_labels) = function.body.iter().map(required_locals_and_labels).fold(
+        (0, 0),
+        |(max_locals, max_labels), (locals, labels)| {
+            (max_locals.max(locals), max_labels.max(labels))
+        },
+    );
+
+    let locals = locals.max(function.parameters);
 
     // Colocar cada función en su propia sección permite eliminar
     // código muerto con -Wl,--gc-sections en la fase de enlazado
@@ -118,6 +127,7 @@ fn emit_body<'a, E: Emitter<'a>>(
         function,
         output: RefCell::new(output),
         locals,
+        next_label: agnostic_labels,
         frame_info: Default::default(),
     };
 
@@ -140,15 +150,16 @@ fn emit_body<'a, E: Emitter<'a>>(
                 }
             }
 
-            SetLabel(Label(label)) => {
+            SetLabel(label) => {
                 emitter.clear()?;
 
                 let (cx, _) = emitter.cx_regs();
-                writeln!(cx, "\t.L{}.{}:", function.name, label)?;
+                emit_label!(cx, label)?;
             }
 
             Jump(label) => {
-                let label = label_symbol(function, *label);
+                let (cx, _) = emitter.cx_regs();
+                let label = format_label!(cx, label);
 
                 emitter.spill()?;
                 emitter.jump_unconditional(&label)?;
@@ -157,7 +168,8 @@ fn emit_body<'a, E: Emitter<'a>>(
             }
 
             JumpIfFalse(local, label) => {
-                let label = label_symbol(function, *label);
+                let (cx, _) = emitter.cx_regs();
+                let label = format_label!(cx, label);
                 let reg = emitter.read(*local)?;
 
                 emitter.spill()?;
@@ -224,37 +236,35 @@ fn emit_body<'a, E: Emitter<'a>>(
     Ok(())
 }
 
-/// Genera el símbolo que corresponde a una etiqueta dentro de una función.
-fn label_symbol(function: &GeneratedFunction, Label(label): Label) -> String {
-    format!(".L{}.{}", function.name, label)
-}
-
-/// Cuenta la mínima cantidad de locales que una instrucción exige
-/// que se encuentren disponsibles.
-fn required_locals(instruction: &Instruction) -> u32 {
+/// Cuenta la mínima cantidad de locales y etiquetas que una instrucción exige
+/// que se encuentren disponibles y/o en uso.
+fn required_locals_and_labels(instruction: &Instruction) -> (u32, u32) {
     use Instruction::*;
 
-    let required = |Local(local)| local + 1;
+    let locals = |Local(local)| local + 1;
+    let labels = |Label(label)| label + 1;
+
     match instruction {
-        Move(from, to) => required(*from).max(required(*to)),
-        JumpIfFalse(local, _) => required(*local),
-        LoadConst(_, local) => required(*local),
-        LoadGlobal(_, local) => required(*local),
-        StoreGlobal(local, _) => required(*local),
-        Not(local) => required(*local),
-        Negate(local) => required(*local),
-        Binary(lhs, _, rhs) => required(*lhs).max(required(*rhs)),
+        Move(from, to) => (locals(*from).max(locals(*to)), 0),
+        SetLabel(label) => (0, labels(*label)),
+        Jump(label) => (0, labels(*label)),
+        JumpIfFalse(local, label) => (locals(*local), labels(*label)),
+        LoadConst(_, local) => (locals(*local), 0),
+        LoadGlobal(_, local) => (locals(*local), 0),
+        StoreGlobal(local, _) => (locals(*local), 0),
+        Not(local) => (locals(*local), 0),
+        Negate(local) => (locals(*local), 0),
+        Binary(lhs, _, rhs) => (locals(*lhs).max(locals(*rhs)), 0),
 
         Call {
             arguments, output, ..
         } => arguments
             .iter()
             .copied()
-            .map(required)
+            .map(locals)
             .max()
-            .or(output.map(required))
-            .unwrap_or(0),
-
-        SetLabel(_) | Jump(_) => 0,
+            .or(output.map(locals))
+            .map(|required| (required, 0))
+            .unwrap_or((0, 0)),
     }
 }

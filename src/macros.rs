@@ -63,3 +63,16 @@ macro_rules! emit {
         writeln!($context, $($format)*)
     }};
 }
+
+macro_rules! emit_label {
+    ($context:expr, $label:expr) => {
+        writeln!($context, "\t.L{}.{}:", $context.function().name, $label.0)
+    };
+}
+
+/// Genera el símbolo que corresponde a una etiqueta dentro de una función.
+macro_rules! format_label {
+    ($context:expr, $label:expr) => {
+        format!(".L{}.{}", $context.function().name, $label.0)
+    };
+}
