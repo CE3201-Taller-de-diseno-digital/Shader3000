@@ -254,10 +254,12 @@ impl<'a> Emitter<'a> {
 
         self.spill()?;
 
-        emit!(self.cx, "s32i", "{}, a1, -4", lhs)?;
-        emit!(self.cx, "s32i", "{}, a1, -8", rhs)?;
-        emit!(self.cx, "l32i", "a2, a1, -4")?;
-        emit!(self.cx, "l32i", "a3, a1, -8")?;
+        emit!(self.cx, "addi", "a1, a1, -8")?;
+        emit!(self.cx, "s32i", "{}, a1, 0", lhs)?;
+        emit!(self.cx, "s32i", "{}, a1, 4", rhs)?;
+        emit!(self.cx, "l32i", "a2, a1, 0")?;
+        emit!(self.cx, "l32i", "a3, a1, 4")?;
+        emit!(self.cx, "addi", "a1, a1, 8")?;
 
         self.clear()?;
         emit!(self.cx, "call0", "{}", function)?;
