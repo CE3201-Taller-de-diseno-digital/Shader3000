@@ -11,13 +11,15 @@ date: \bigskip\bigskip\bigskip\bigskip Area Académica de\endgraf Ingeniería en
 header-includes:
   - \setlength\parindent{24pt}
   - \usepackage{url}
+  - \usepackage{float}
+  - \floatplacement{figure}{H}
 lang: es-ES
 papersize: letter
 classoption: fleqn
 geometry: margin=1in
 fontsize: 12pt
 fontfamily: sans
-linestretch: 1.15
+linestretch: 1.5
 bibliography: doc/bibliografia.bib
 csl: /home/josfemova/UsefulRepos/styles/ieee.csl
 nocite: |
@@ -35,9 +37,21 @@ nocite: |
 
 # CE3104-AnimationLed
 
-# 1.Diagrama de arquitectura
+# Diagramas y gramática del lenguaje
+
+## 1.1 Diagrama de arquitectura
 
 ![Diagrama de arquitectura del proyecto](doc/imgs/Diagramas-arquitectura.png)
+
+## 1.2 Esquemático del circuito
+
+![Esquemático del circuito utilizado](doc/imgs/Diagrama-circuito.png)
+
+## 1.3 Gramática implementada
+
+```BNF
+
+```
 
 # 2. Alternativas de solución consideradas y justificación de la seleccionada
 
@@ -453,7 +467,6 @@ conexiones y se logró confirmar que esto era el origen del problema.
 - Favorecer en medida de lo posible estructuras organizacionales que permitan que evite destinar a los miembros del equipo
   a una tarea exclusiva. Es bueno tener especializaciones, sin embargo, también es muy provechoso tener un equipo lo
   suficientemente dinámico como para optimizar el tiempo de desarrollo.
-
 
 # 7. Bibliografía
 
