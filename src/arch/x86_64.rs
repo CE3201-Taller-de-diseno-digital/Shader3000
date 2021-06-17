@@ -341,7 +341,7 @@ impl<'a> Emitter<'a> {
         let value_offset = if local < Reg::MAX_ARGS || parameters < Reg::MAX_ARGS {
             -1 - local as i32
         } else if local < parameters {
-            1 + (local - Reg::MAX_ARGS) as i32
+            2 + (local - Reg::MAX_ARGS) as i32
         } else {
             -1 - (Reg::MAX_ARGS + local - parameters) as i32
         };
