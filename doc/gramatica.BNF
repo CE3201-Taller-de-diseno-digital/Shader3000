@@ -35,7 +35,7 @@
 
 <Read> -> <Identifier> | <Identifier><Indices>
 
-<Attr> ->  <Expr>.Identifier
+<Attr> ->  <Expr>.<Identifier>
 
 <Len> -> Len(<Expr>)
 
@@ -47,8 +47,8 @@
 
 <Binary> -> (<Expr> <BinOp> <Expr>) | <Expr> <BinOP> <Expr>
 
-<Expr> -> True | False | <Integer> | <Read> | <Attr> | <Len>
-	| <Range> | <List> | <Negate> | <Binary> 
+<Expr> -> True | False | <Integer> | <Read> | <Attr> | <Len> | <Range>
+	| <List> | <Negate> | <Binary> 
 
 <Values> -> <Expr> | <Expr>,<Values>
 
@@ -64,18 +64,20 @@
 
 <Assignment> -> <Targets> = <Values>;
 
-<MethodCall> -> <Target>.<Identifier>(<Arguments>); | <Target>.<Identifier>();
+<MethodCall> -> <Target>.<Identifier>(<Arguments>);
+	| <Target>.<Identifier>(); | <Target>.<Identifier>;
 
-<Blink> -> blink(<Expr>,<Expr>,<Expr>,<TimeUnit>,<Expr>);
+<Blink> -> Blink(<Expr>,<Expr>,<Expr>,<TimeUnit>,<Expr>);
 
-<Delay> -> delay(<Expr>,<TimeUnit>);
+<Delay> -> Delay(<Expr>,<TimeUnit>);
 
 <PrintLed> -> PrintLed(<Expr>,<Expr>,<Expr>);
 
 <PrintLedX> -> PrintLedX(<ObjectKind>,<Expr>,<Expr>);
 
-<Statement> -> <If> | <For> | <UserCall> | <GlobalLift> | <Assignment> | <MethodCall>
-	| <Blink> | <Delay> | <PrintLed> | <PrintLedX> | epsilon
+<Statement> -> <If> | <For> | <UserCall> | <GlobalLift> | <Assignment>
+	| <MethodCall> | <Blink> | <Delay> | <PrintLed> | <PrintLedX>
+	| epsilon
 
 <Statements> -> <Statement><Statements> | <Statement>
 
