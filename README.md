@@ -61,22 +61,22 @@ nocite: |
 <ObjectKind> -> "c" | "f" | "m"
 <BinOp> -> + | - | * | ** | / | % | // | == | <> | < | <= | > | >=
 <Index> -> [<Expr>] | [<Expr>, <Expr>] | [<Expr>:<Expr>] | [:, <Expr>]   
-<Indices> -> <Index> | <Index><Indices>
+<Indices> -> <Index> | <Index><Indices> | epsilon 
 <Target> -> <Identifier><Indices>
 <Targets> -> <Identifier><Indices> | <Identifier><Indices>,<Targets>
 <Parameter> -> <Identifier>:<Type>
 <Parameters> -> <Paramenter>,<Parameters> | <Parameter>
 <Integer> -> <number> | <number><Integer>
-<Read> -> <Identifier> | <Identifier><Indices>
+<Read> -> <Identifier><Indices>
 <Attr> ->  <Expr>.<Identifier>
 <Len> -> Len(<Expr>)
 <Range> -> Range(<Expr>,<Expr>)
-<List> -> [<Values>]
+<List> -> [<Values>] | []
 <Negate> -> -<Expr>
 <Binary> -> (<Expr> <BinOp> <Expr>) | <Expr> <BinOP> <Expr>
 <Expr> -> True | False | <Integer> | <Read> | <Attr> | <Len> | <Range>
 	| <List> | <Negate> | <Binary> 
-<Values> -> <Expr> | <Expr>,<Values>
+<Values> -> <Expr> | <Expr>,<Values> 
 <Arguments> -> <Expr> | <Expr>,<Arguments>
 <If> -> if <Expr> { <Statements> }
 <For> -> for <Identifier> in <Expr> { <Statements> }
@@ -91,12 +91,10 @@ nocite: |
 <PrintLedX> -> PrintLedX(<ObjectKind>,<Expr>,<Expr>);
 <Statement> -> <If> | <For> | <UserCall> | <GlobalLift> | <Assignment>
 	| <MethodCall> | <Blink> | <Delay> | <PrintLed> | <PrintLedX>
-	| epsilon
-<Statements> -> <Statement><Statements> | <Statement>
-
+<Statements> -> <Statement><Statements> | <Statement> | epsilon
 <Procedure> -> procedure <Identifier>(<Parameters>){<statements>}
-	| procedure <Identifier>(){<statements>} | epsilon
-<Procedures> -> <Procedure><Procedures> | <Procedure>
+	| procedure <Identifier>(){<statements>} 
+<Procedures> -> <Procedure><Procedures> | <Procedure> | epsilon
 <Program> -> <Procedures>
 ```
 
