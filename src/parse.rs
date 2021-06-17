@@ -104,6 +104,11 @@ pub enum Statement {
         args: Vec<Located<Expr>>,
     },
 
+    Debug {
+        location: Location,
+        hint: Option<Located<Expr>>,
+    },
+
     Blink {
         column: Located<Expr>,
         row: Located<Expr>,
@@ -473,6 +478,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
             Token::Keyword(Keyword::For) => self.for_statement(),
             Token::Keyword(Keyword::Call) => self.user_call(),
             Token::Keyword(Keyword::Global) => self.global_lift(),
+            Token::Keyword(Keyword::Debug) => self.debug(),
             Token::Keyword(Keyword::Blink) => self.blink(),
             Token::Keyword(Keyword::Delay) => self.delay(),
             Token::Keyword(Keyword::PrintLed) => self.print_led(),
@@ -543,6 +549,19 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
         self.expect(Token::Semicolon)?;
 
         Ok(Statement::GlobalLift(id))
+    }
+
+    fn debug(&mut self) -> Parse<Statement> {
+        self.keyword(Keyword::Debug)?;
+        let location = self.last_known.clone();
+
+        self.expect(Token::OpenParen)?;
+        let hint = self.optional(Self::expr)?;
+
+        self.expect(Token::CloseParen)?;
+        self.expect(Token::Semicolon)?;
+
+        Ok(Statement::Debug { location, hint })
     }
 
     fn blink(&mut self) -> Parse<Statement> {

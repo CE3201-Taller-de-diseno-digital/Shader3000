@@ -461,6 +461,7 @@ impl<S: Sink> Context<'_, S> {
                 }
 
                 UserCall { procedure, args } => self.scan_user_call(procedure, args)?,
+                Debug { location, hint } => self.scan_debug(location, hint.as_ref())?,
 
                 Blink {
                     column,
@@ -637,6 +638,45 @@ impl<S: Sink> Context<'_, S> {
         // iterator es liberado por expire()
 
         Ok(())
+    }
+
+    fn scan_debug(
+        &mut self,
+        location: &Location,
+        hint: Option<&Located<parse::Expr>>,
+    ) -> Semantic<()> {
+        let line = location.start().line() as i32;
+        self.ephemeral(|this, line_local| {
+            this.sink.push(Instruction::LoadConst(line, line_local));
+
+            match hint {
+                None => this.sink.push(Instruction::Call {
+                    target: Function::External("builtin_debug"),
+                    arguments: vec![line_local],
+                    output: None,
+                }),
+
+                Some(hint) => this.ephemeral(|this, hint_local| {
+                    let (typ, ownership) = this.eval(hint, hint_local)?;
+                    let builtin = match typ {
+                        Type::Bool => "builtin_debug_bool",
+                        Type::Int => "builtin_debug_int",
+                        Type::List => "builtin_debug_list",
+                        Type::Mat => "builtin_debug_mat",
+                    };
+
+                    this.sink.push(Instruction::Call {
+                        target: Function::External(builtin),
+                        arguments: vec![line_local, hint_local],
+                        output: None,
+                    });
+
+                    Ok((typ, ownership, ()))
+                })?,
+            }
+
+            Ok((Type::Int, Ownership::Owned, ()))
+        })
     }
 
     fn scan_user_call(
