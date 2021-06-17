@@ -13,12 +13,29 @@ use crate::{
     source::{Located, Location},
 };
 
+#[derive(Default)]
 struct SymbolTable<'a> {
     outer: Option<&'a SymbolTable<'a>>,
     symbols: HashMap<Identifier, Named>,
+    lifted: HashSet<Identifier>,
 }
 
 impl SymbolTable<'_> {
+    fn is_lifted(&self, id: &Identifier) -> bool {
+        let mut table = self;
+
+        loop {
+            if table.lifted.contains(id) {
+                break true;
+            }
+
+            match table.outer {
+                None => break false,
+                Some(outer) => table = outer,
+            }
+        }
+    }
+
     fn lookup(&self, id: &Located<Identifier>) -> Semantic<&Named> {
         self.try_lookup(id).ok_or_else(|| {
             Located::at(
@@ -255,7 +272,7 @@ impl parse::Ast {
                 let mut context = Context {
                     scope: SymbolTable {
                         outer: Some(&global_scope),
-                        symbols: Default::default(),
+                        ..Default::default()
                     },
 
                     sink: Listing::for_parameters(parameters),
@@ -297,7 +314,7 @@ impl parse::Ast {
         let mut context = Context {
             scope: SymbolTable {
                 outer: None,
-                symbols: Default::default(),
+                ..Default::default()
             },
 
             sink: TypeCheck,
@@ -673,15 +690,10 @@ impl<S: Sink> Context<'_, S> {
     fn global_lift(&mut self, id: &Located<Identifier>) -> Semantic<()> {
         match self.scope.lookup(id)? {
             Named::Var(Variable {
-                access: Access::Global(global),
-                typ,
+                access: Access::Global(_),
+                ..
             }) => {
-                let named = Named::Var(Variable {
-                    access: Access::Global(global.clone()),
-                    typ: *typ,
-                });
-
-                self.scope.symbols.insert(id.as_ref().clone(), named);
+                self.scope.lifted.insert(id.as_ref().clone());
                 Ok(())
             }
 
@@ -705,11 +717,13 @@ impl<S: Sink> Context<'_, S> {
         }
 
         let value_type = self.type_check(value)?;
+        let target = target.var();
 
-        let var = target.var();
-        let var = match (mode, self.scope.try_lookup(var)) {
-            (_, Some(Named::Var(var))) if !matches!(&var.access, Access::Global(_)) => var,
+        let should_override = |var: &Variable, scope: &SymbolTable<'_>| {
+            matches!(&var.access, Access::Global(_)) && !scope.is_lifted(target.as_ref())
+        };
 
+        let var = match (mode, self.scope.try_lookup(target)) {
             (
                 GlobalInit,
                 Some(Named::Var(Variable {
@@ -729,6 +743,7 @@ impl<S: Sink> Context<'_, S> {
             }
 
             (Main, Some(Named::Var(var))) => var,
+            (_, Some(Named::Var(var))) if !should_override(var, &self.scope) => var,
 
             _ => {
                 let local = self.sink.alloc_local();
@@ -739,7 +754,7 @@ impl<S: Sink> Context<'_, S> {
                     typ: value_type,
                 });
 
-                self.scope.symbols.insert(var.as_ref().clone(), named);
+                self.scope.symbols.insert(target.as_ref().clone(), named);
                 return Ok(());
             }
         };
@@ -812,7 +827,7 @@ impl<S: Sink> Context<'_, S> {
         let mut context = Context {
             scope: SymbolTable {
                 outer: Some(&self.scope),
-                symbols: Default::default(),
+                ..Default::default()
             },
 
             sink: TypeCheck,
@@ -1324,7 +1339,7 @@ impl<S: Sink> Context<'_, S> {
         let mut subcontext = Context {
             scope: SymbolTable {
                 outer: Some(&self.scope),
-                symbols: Default::default(),
+                ..Default::default()
             },
 
             sink,
