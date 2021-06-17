@@ -18,6 +18,56 @@
 procedure main(){
 
 	rows ,cols = 8, 8;
+	
+	call dance();
+	
+	delay(5,"seg");
+	
+	call stick_man(30,900);
+	
+	call off();
+
+}
+
+procedure dance(){
+
+	call off();
+	
+	call one_by_one(true,500);
+	
+	call one_by_one(true,250);
+	
+	call one_by_one(true,50);
+	
+	delay(200,"mil");
+	
+	call desc_to_m(true,false,400,50);
+	
+	call desc_frm_m(true,false,400,50);
+	
+	delay(200,"mil");
+	
+	call desc_to_m(true,true,400,50);
+	
+	call desc_frm_m(true,true,400,50);
+	
+	delay(200,"mil");
+	
+	call desc_to_m(true,false,100,500);
+	
+	call desc_frm_m(true,false,100,500);
+	
+	delay(200,"mil");
+	
+	call desc_to_m(false,true,100,500);
+	
+	call desc_frm_m(false,true,100,500);
+	
+	delay(2,"seg");
+	
+	call off();
+	
+	call anim(10,500);	
 
 }
 
@@ -64,7 +114,7 @@ procedure ON(){
 }
 
 ## Enciende todos los leds, uno por uno, por filas
-procedure one_by_one(keep_OFF: bool){
+procedure one_by_one(keep_OFF: bool,speed:int){
 
 	call off();
 	
@@ -74,7 +124,7 @@ procedure one_by_one(keep_OFF: bool){
 			
 			printLed(i,j,true);
 			
-			delay(150,"mil");
+			delay(speed,"mil");
 			
 			if keep_off {
 				printLed(i,j,false);
@@ -140,19 +190,14 @@ procedure stick_man(jumps:int, speed:int){
 
 }
 
-procedure diagonals(){
-
-	call off();
-
-}
-
 
 ##Descendent to middle
 ##Enciende las diagonales descendentes empezando desde las
 ##esquinas. 
 ## Si top es true --> Enciende de la esquina SD al medio
 ##Si top es false --> Enciende de la esquina IZ al medio
-procedure desc_to_m(keep_OFF:bool , top:bool){
+##Speed: velocidad del delay en ms
+procedure desc_to_m(keep_OFF:bool , top:bool, line_speed: int ,ind_speed:int ){
 
 	this_row = rows-1;
 		
@@ -173,7 +218,7 @@ procedure desc_to_m(keep_OFF:bool , top:bool){
 				
 			printLed(row,col,true) ; 
 				
-			delay(200,"mil");
+			delay(ind_speed,"mil");
 				
 			if keep_OFF {
 				
@@ -184,6 +229,8 @@ procedure desc_to_m(keep_OFF:bool , top:bool){
 		}
 			
 		this_row = this_row-1;
+		
+		delay(line_speed,"mil");
 			
 	}
 
@@ -194,7 +241,7 @@ procedure desc_to_m(keep_OFF:bool , top:bool){
 ##mitad de la matriz. 
 ## Si top es true --> Enciende del medio a la esquina IZ 
 ##Si top es false --> Enciende del medio a la esquina SD
-procedure desc_frm_m(keep_OFF:bool,top:bool){
+procedure desc_frm_m(keep_OFF:bool,top:bool,speed: int){
 
 	this_col = 0;
 	
@@ -215,7 +262,7 @@ procedure desc_frm_m(keep_OFF:bool,top:bool){
 			
 			printLed(row,col,true);  
 			
-			delay(200,"mil");
+			delay(speed,"mil");
 				
 			if keep_OFF{
 				
@@ -228,6 +275,86 @@ procedure desc_frm_m(keep_OFF:bool,top:bool){
 	this_col = this_col +1;
 	
 	}
+	
+}
+
+
+Procedure anim(cycles:int ,speed:int){
+	
+	for i in cycles{
+	
+		frame1   =    [ [true,false,false,false,false,false,false,false],
+		
+					 [true,true,false,false,false,false,false,false],
+					 
+					 [true,true,true,false,false,false,false,false],
+					 
+					 [true,true,true,true,false,false,false,false],
+					 
+					 [true,true,true,true,true,false,false,false],
+					 
+					 [true,true,true,true,true,true,false,false],
+					 
+					 [true,true,true,true,true,true,true,false],
+					 
+					 [true,true,true,true,true,true,true,true] ];
+					 
+					 ##---------------------------------------------------------------
+					 
+		frame2 =      [ [true,true,true,true,true,true,true,true],
+		
+					 [true,true,true,true,true,true,true,false],
+					 
+					 [true,true,true,true,true,true,false,false],
+					 
+					 [true,true,true,true,true,false,false,false],
+					 
+					 [true,true,true,true,false,false,false,false],
+					 
+					 [true,true,true,false,false,false,false,false],
+					 
+					 [true,true,false,false,false,false,false,false],
+					 
+					 [true,false,false,false,false,false,false,false] ];
+	
+		printledX("M",0,frame1);
+		
+		delay(speed,"mil");
+		
+		printledX("M",0,frame2);
+		
+		delay(speed,"mil");
+		
+		for r in rows{
+		
+			for c in cols{
+			
+				frame1[f,c].Neg();
+				
+				frame2[f][c].Neg();
+				
+				if r == c {
+					
+					frame1[f,c]  = true;
+				
+					frame2[f][c] = true;	
+					
+				}
+			
+			}
+		
+		}
+		
+		printledX("M",0,frame1);
+		
+		delay(speed,"mil");
+		
+		printledX("M",0,frame2);
+		
+		delay(speed,"mil");
+		
+	}
+	
 	
 }
 
