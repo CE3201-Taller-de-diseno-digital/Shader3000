@@ -237,6 +237,9 @@ pub enum SemanticError {
     #[error("Objects of type `{0}` have no attribute `{1}`")]
     NoSuchAttr(Type, Identifier),
 
+    #[error("This global statement is in conflict with another symbol")]
+    GlobalLiftConflict,
+
     #[error("Floats are not supported by this implementation")]
     Floats,
 }
@@ -501,6 +504,8 @@ impl<S: Sink> Context<'_, S> {
                     self.eval_fixed_call(builtin, location, &args, &types, None)?;
                 }
 
+                GlobalLift(id) => self.global_lift(id)?,
+
                 Assignment { targets, values } => {
                     for (target, value) in break_assignment(targets, values)? {
                         let var = target.var().as_ref().as_ref();
@@ -663,6 +668,28 @@ impl<S: Sink> Context<'_, S> {
         }
 
         Ok(())
+    }
+
+    fn global_lift(&mut self, id: &Located<Identifier>) -> Semantic<()> {
+        match self.scope.lookup(id)? {
+            Named::Var(Variable {
+                access: Access::Global(global),
+                typ,
+            }) => {
+                let named = Named::Var(Variable {
+                    access: Access::Global(global.clone()),
+                    typ: *typ,
+                });
+
+                self.scope.symbols.insert(id.as_ref().clone(), named);
+                Ok(())
+            }
+
+            _ => Err(Located::at(
+                SemanticError::GlobalLiftConflict,
+                id.location().clone(),
+            )),
+        }
     }
 
     fn assign(

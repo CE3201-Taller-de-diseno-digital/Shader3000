@@ -91,6 +91,8 @@ pub enum Statement {
         args: Vec<Located<Expr>>,
     },
 
+    GlobalLift(Located<Identifier>),
+
     Assignment {
         targets: Vec<Located<Target>>,
         values: Vec<Located<Expr>>,
@@ -470,6 +472,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
             Token::Keyword(Keyword::If) => self.if_statement(),
             Token::Keyword(Keyword::For) => self.for_statement(),
             Token::Keyword(Keyword::Call) => self.user_call(),
+            Token::Keyword(Keyword::Global) => self.global_lift(),
             Token::Keyword(Keyword::Blink) => self.blink(),
             Token::Keyword(Keyword::Delay) => self.delay(),
             Token::Keyword(Keyword::PrintLed) => self.print_led(),
@@ -532,6 +535,14 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
         self.expect(Token::Semicolon)?;
 
         Ok(Statement::UserCall { procedure, args })
+    }
+
+    fn global_lift(&mut self) -> Parse<Statement> {
+        self.keyword(Keyword::Global)?;
+        let id = self.id()?;
+        self.expect(Token::Semicolon)?;
+
+        Ok(Statement::GlobalLift(id))
     }
 
     fn blink(&mut self) -> Parse<Statement> {
