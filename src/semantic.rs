@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::{self, Display},
     rc::Rc,
 };
@@ -20,8 +20,18 @@ struct SymbolTable<'a> {
 
 impl SymbolTable<'_> {
     fn lookup(&self, id: &Located<Identifier>) -> Semantic<&Named> {
+        self.try_lookup(id).ok_or_else(|| {
+            Located::at(
+                SemanticError::Undefined(id.as_ref().clone()),
+                id.location().clone(),
+            )
+        })
+    }
+
+    fn try_lookup(&self, id: &Located<Identifier>) -> Option<&Named> {
         let mut table = self;
-        let named = loop {
+
+        loop {
             match table.symbols.get(id) {
                 Some(id) => break Some(id),
 
@@ -30,14 +40,7 @@ impl SymbolTable<'_> {
                     None => break None,
                 },
             }
-        };
-
-        named.ok_or_else(|| {
-            Located::at(
-                SemanticError::Undefined(id.as_ref().clone()),
-                id.location().clone(),
-            )
-        })
+        }
     }
 }
 
@@ -85,6 +88,18 @@ impl Display for Type {
 enum Ownership {
     Owned,
     Borrowed,
+}
+
+#[derive(Copy, Clone)]
+enum AssignmentMode {
+    /// Asignación en main() que no inicializa una global
+    Main,
+
+    /// Asignación en main() que inicializa una global
+    GlobalInit,
+
+    /// Ninguna de las otras opciones es correcta
+    Normal,
 }
 
 trait Sink: Default {
@@ -241,6 +256,8 @@ impl parse::Ast {
                     },
 
                     sink: Listing::for_parameters(parameters),
+                    procedure: Some(procedure),
+                    is_toplevel: Default::default(),
                 };
 
                 let symbol = context.scan_procedure(procedure)?;
@@ -281,6 +298,8 @@ impl parse::Ast {
             },
 
             sink: TypeCheck,
+            procedure: None,
+            is_toplevel: Default::default(),
         };
 
         let mut statements = main.statements().iter();
@@ -348,6 +367,8 @@ impl parse::Procedure {
 struct Context<'a, S: Sink> {
     scope: SymbolTable<'a>,
     sink: S,
+    procedure: Option<&'a parse::Procedure>,
+    is_toplevel: bool,
 }
 
 impl<S: Sink> Context<'_, S> {
@@ -355,6 +376,8 @@ impl<S: Sink> Context<'_, S> {
         let types = self.parameter_types(procedure)?;
 
         self.subscope(|this| {
+            this.is_toplevel = true;
+
             let parameters = procedure.parameters().iter();
             for (i, (parameter, typ)) in parameters.zip(types.iter().copied()).enumerate() {
                 let name = parameter.name();
@@ -382,8 +405,28 @@ impl<S: Sink> Context<'_, S> {
     }
 
     fn scan_statements(&mut self, statements: &[parse::Statement]) -> Semantic<()> {
+        let is_entrypoint = self
+            .procedure
+            .map(|proc| proc.is_entrypoint())
+            .unwrap_or(false);
+
+        let mut initialized_globals = HashSet::new();
+        let mut assignment_mode = match (is_entrypoint, self.is_toplevel) {
+            (true, true) => AssignmentMode::GlobalInit,
+            (true, false) => AssignmentMode::Main,
+            _ => AssignmentMode::Normal,
+        };
+
         for statement in statements.iter() {
             use parse::{ObjectKind::*, Statement::*, TimeUnit::*};
+            use AssignmentMode::*;
+
+            assignment_mode = match (assignment_mode, statement) {
+                (GlobalInit, Assignment { .. }) => GlobalInit,
+                (GlobalInit, _) => Main,
+
+                _ => assignment_mode,
+            };
 
             match statement {
                 If { condition, body } => self.scan_conditional(condition, body)?,
@@ -458,6 +501,26 @@ impl<S: Sink> Context<'_, S> {
                     self.eval_fixed_call(builtin, location, &args, &types, None)?;
                 }
 
+                Assignment { targets, values } => {
+                    for (target, value) in break_assignment(targets, values)? {
+                        let var = target.var().as_ref().as_ref();
+                        let (global_init, mode) = match assignment_mode {
+                            GlobalInit if initialized_globals.get(var).is_none() => {
+                                (true, GlobalInit)
+                            }
+
+                            GlobalInit => (false, Main),
+                            _ => (false, assignment_mode),
+                        };
+
+                        self.assign(mode, target, value)?;
+
+                        if global_init {
+                            initialized_globals.insert(var.clone());
+                        }
+                    }
+                }
+
                 _ => todo!(),
             }
         }
@@ -479,7 +542,7 @@ impl<S: Sink> Context<'_, S> {
             Ok((Type::Bool, Ownership::Owned, ()))
         })?;
 
-        self.scan_statements(body)?;
+        self.subscope(|this| this.scan_statements(body))?;
         self.sink.push(Instruction::SetLabel(if_false));
 
         Ok(())
@@ -602,6 +665,108 @@ impl<S: Sink> Context<'_, S> {
         Ok(())
     }
 
+    fn assign(
+        &mut self,
+        mode: AssignmentMode,
+        target: &Located<parse::Target>,
+        value: &Located<parse::Expr>,
+    ) -> Semantic<()> {
+        use AssignmentMode::*;
+
+        if !target.indices().is_empty() {
+            todo!();
+        }
+
+        let value_type = self.type_check(value)?;
+
+        let var = target.var();
+        let var = match (mode, self.scope.try_lookup(var)) {
+            (_, Some(Named::Var(var))) if !matches!(&var.access, Access::Global(_)) => var,
+
+            (
+                GlobalInit,
+                Some(Named::Var(Variable {
+                    access: Access::Global(global),
+                    ..
+                })),
+            ) => {
+                let global = global.clone();
+
+                return self.ephemeral(|this, local| {
+                    this.eval_owned(value, local)?;
+                    this.sink.push(Instruction::StoreGlobal(local, global));
+
+                    // Esto evita un drop de la local
+                    Ok((Type::Int, Ownership::Owned, ()))
+                });
+            }
+
+            (Main, Some(Named::Var(var))) => var,
+
+            _ => {
+                let local = self.sink.alloc_local();
+                self.eval_owned(value, local)?;
+
+                let named = Named::Var(Variable {
+                    access: Access::Local(local),
+                    typ: value_type,
+                });
+
+                self.scope.symbols.insert(var.as_ref().clone(), named);
+                return Ok(());
+            }
+        };
+
+        if var.typ != value_type {
+            return Err(Located::at(
+                SemanticError::ExpectedType(var.typ, value_type),
+                value.location().clone(),
+            ));
+        }
+
+        let must_drop = destructor(var.typ, Ownership::Owned).is_some();
+        match (&var.access, must_drop) {
+            (Access::Local(local), false) => {
+                let local = *local;
+                self.eval(value, local)?;
+            }
+
+            (Access::Local(local), true) => {
+                let local = *local;
+
+                self.ephemeral(|this, value_local| {
+                    this.eval(value, value_local)?;
+                    this.drop(local, value_type, Ownership::Owned);
+                    this.sink.push(Instruction::Move(value_local, local));
+
+                    // Se evita otro drop
+                    Ok((Type::Int, Ownership::Owned, ()))
+                })?;
+            }
+
+            (Access::Global(global), drop) => {
+                let global = global.clone();
+                self.ephemeral(|this, value_local| {
+                    this.eval(value, value_local)?;
+                    if drop {
+                        let global = global.clone();
+
+                        this.ephemeral(|this, old_local| {
+                            this.sink.push(Instruction::LoadGlobal(global, old_local));
+                            Ok((value_type, Ownership::Owned, ()))
+                        })?;
+                    }
+
+                    this.sink
+                        .push(Instruction::StoreGlobal(value_local, global));
+                    Ok((Type::Int, Ownership::Owned, ()))
+                })?;
+            }
+        }
+
+        Ok(())
+    }
+
     fn parameter_types(&mut self, procedure: &parse::Procedure) -> Semantic<Vec<Type>> {
         procedure
             .parameters()
@@ -624,6 +789,8 @@ impl<S: Sink> Context<'_, S> {
             },
 
             sink: TypeCheck,
+            procedure: None,
+            is_toplevel: Default::default(),
         };
 
         let (typ, _) = context.eval(expr, Local::default())?;
@@ -1134,6 +1301,8 @@ impl<S: Sink> Context<'_, S> {
             },
 
             sink,
+            procedure: self.procedure,
+            is_toplevel: false,
         };
 
         let result = callback(&mut subcontext);
