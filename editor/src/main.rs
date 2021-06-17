@@ -31,7 +31,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Command};
 
 /// Función main
 /// Incia la aplicación de GTK
@@ -162,14 +162,22 @@ fn build_ui(application: &gtk::Application) {
     // Ejecutar compile primero
     // Flasheo del código compilado
     // Despliegue de mensajes en la terminal
-    compile_run.connect_clicked(clone!(@weak compile, @weak terminal => move |_| {
+    compile_run.connect_clicked(clone!(@weak save, @weak current_file, @weak terminal => move |_| {
 
-       compile.activate();
+        save.activate();
+
+        let filename: &str = &current_file.get_text();
+
+        let cmd = Command::new("./compiler").args(&[filename,"-o","exe","--target","esp8266"]).output().unwrap();
+        let answer = std::str::from_utf8(&cmd.stderr).unwrap();
+
+        let term_buffer = terminal.get_buffer().unwrap();
+        let mut bounds = term_buffer.get_bounds();
+        term_buffer.insert(&mut bounds.1,&answer);
 
        let cmd = Command::new("espflash").args(&["/dev/ttyUSB0","exe"]).output().unwrap();
        let answer = std::str::from_utf8(&cmd.stderr).unwrap();
 
-       let term_buffer = terminal.get_buffer().unwrap();
        let mut bounds = term_buffer.get_bounds();
        term_buffer.insert(&mut bounds.1,&answer);
 
