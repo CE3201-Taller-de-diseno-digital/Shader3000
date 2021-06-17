@@ -1,4 +1,3 @@
-
 ##Cada uno de los grupos deberá traer el código suficiente y
 ##el dispositivo necesario para presentar una de las
 ##animaciones presentadas al inicio del presente documento.
@@ -18,9 +17,7 @@
 
 procedure main(){
 
-	rows = 8;
-	
-	cols = 8;
+	rows ,cols = 8, 8;
 
 }
 
@@ -66,7 +63,8 @@ procedure ON(){
 	printledX("M",0,on_mat);
 }
 
-procedure one_by_one(only_one: bool){
+## Enciende todos los leds, uno por uno, por filas
+procedure one_by_one(keep_OFF: bool){
 
 	call off();
 	
@@ -78,7 +76,7 @@ procedure one_by_one(only_one: bool){
 			
 			delay(150,"mil");
 			
-			if only_one {
+			if keep_off {
 				printLed(i,j,false);
 			}
 		}
@@ -87,10 +85,151 @@ procedure one_by_one(only_one: bool){
 	
 }
 
+## Un hombrecito de palo da cantidad de saltos igual a  "jumps" 
+## a una velocidad de "speed" mili segundos
+procedure stick_man(jumps:int, speed:int){
+	
+	call off();
+	
+	down =          [ [false,false,false,true,true,true,false,false],
+	
+				 [false,false,false,true,true,true,false,false],
+				 
+				 [false,false,false,true,true,true,false,false],
+				 
+				 [false,false,false,false,true,false,false,false],
+				 
+				 [false,false,false,true,true,true,false,false],
+				 
+				 [false,false,true,false,true,false,true,false],
+				 
+				 [false,false,false,false,true,false,false,false],
+				 
+				 [false,false,false,true,false,true,false,false] ];
+				 
+				 
+	up =              [ [false,false,false,true,true,true,false,false],
+	
+				 [false,false,false,true,true,true,false,false],
+				 
+				 [false,true,false,true,true,true,false,true],
+				 
+				 [false,false,true,false,true,false,true,false],
+				 
+				 [false,false,false,true,true,true,false,false],
+				 
+				 [false,false,false,false,true,false,false,false],
+				 
+				 [false,false,false,true,false,true,false,false],
+				 
+				 [false,false,true,false,false,false,true,false] ];
+	
+	for i in jumps{
+		
+			printledX("M",0,down);
+			
+			delay(speed/2,"mil");
+			
+			printledX("M",0,up);
+			
+			delay(speed/2,"mil");
+			
+			call off();
+			
+	}
+
+}
+
+procedure diagonals(){
+
+	call off();
+
+}
 
 
+##Descendent to middle
+##Enciende las diagonales descendentes empezando desde las
+##esquinas. 
+## Si top es true --> Enciende de la esquina SD al medio
+##Si top es false --> Enciende de la esquina IZ al medio
+procedure desc_to_m(keep_OFF:bool , top:bool){
 
+	this_row = rows-1;
+		
+	for i in rows {
+		
+		for j in i+1{
+			
+			row = this_row+j;
+			col   = j;
+				
+			if top{
+					
+				tmp = row;
+				row = col;
+				col = tmp;
+					
+			}
+				
+			printLed(row,col,true) ; 
+				
+			delay(200,"mil");
+				
+			if keep_OFF {
+				
+				printLed(row,col,false); 
+						
+			}
+				
+		}
+			
+		this_row = this_row-1;
+			
+	}
 
+}
+	
+##Descendent from middle
+##Enciende las diagonales descendentes empezando desde la
+##mitad de la matriz. 
+## Si top es true --> Enciende del medio a la esquina IZ 
+##Si top es false --> Enciende del medio a la esquina SD
+procedure desc_frm_m(keep_OFF:bool,top:bool){
+
+	this_col = 0;
+	
+	for i in rows {
+	
+		for j in 8- i {
+		
+			row = j;
+			col   = this_col+j;
+			
+			if top {
+					
+				tmp = row;
+				row = col;
+				col = tmp;
+					
+			}
+			
+			printLed(row,col,true);  
+			
+			delay(200,"mil");
+				
+			if keep_OFF{
+				
+				printLed(row,col,false); 
+						
+			}
+		
+		}
+		
+	this_col = this_col +1;
+	
+	}
+	
+}
 
 
 
