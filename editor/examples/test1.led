@@ -1,0 +1,137 @@
+## -range(8, true)XX
+## -lista[1:4]XX
+##lista.insert(i,false)
+##lista.delete(i)
+##-len(lista)XX
+## -.Neg JOSE
+##lista[i].T
+##lista[i:j].F
+##-blink(dato, 500,"mil",true)XX
+##-delay(500,"mil") SIGN
+##-printled(0,0,True)XX
+##-printledx("F", i,[lista]) XX
+##-printledx("C", i,[lista]) SIGN
+##-printledx("M", 0,[matr]) XX
+## -for SIGN
+##-M[1] JOSE
+##-M[i,j] JOSE
+##-M[:,i] SIGN
+
+procedure main()
+{
+	call print_fila();
+	delay(1,"seg");
+	call turn_off();
+	
+	call turn_off();
+	call print_led();
+	delay(1,"seg");
+	call list_test([true,true,true,true,true,true,true,true]);
+	delay(1,"seg");
+	call print_mat([
+	[false,false,true,true,true,true,false,false],
+	[false,true,false,false,false,false,true,false],
+	[true,false,true,false,false,true,false,true],
+	[true,false,false,false,false,false,false,true],
+	[true,false,false,true,true,false,false,true],
+	[true,false,false,false,false,false,false,true],
+	[true,false,false,true,true,false,false,true],
+	[false,true,true,false,false,true,true,false]		
+	]);
+	delay(1,"seg");
+	call blink_test();
+}
+procedure print_mat(m: mat)
+{
+	printledx("M", 0,m);
+}
+procedure turn_off()
+{
+	printledx("M", 0,[
+	[false,false,false,false,false,false,false,false],
+	[false,false,false,false,false,false,false,false],
+	[false,false,false,false,false,false,false,false],
+	[false,false,false,false,false,false,false,false],
+	[false,false,false,false,false,false,false,false],
+	[false,false,false,false,false,false,false,false],
+	[false,false,false,false,false,false,false,false],
+	[false,false,false,false,false,false,false,false]	
+	]);
+}
+##range, delay,for, printledx("F"...
+procedure print_fila()
+{
+	for i in 8
+	{
+		printledx("F", i, range(i, true));
+		delay(100,"mil") ;
+	
+	}
+	delay(500,"mil") ;
+	for i in 8
+	{
+		printledx("F", i, range(i, false));
+		delay(100,"mil") ;
+	
+	}
+}
+procedure print_led()
+{
+	for i in 8
+	{
+		for j in 8
+		{
+			printled(i,j,True);
+			delay(50,"mil") ;
+		}
+	}
+	for i in 8
+	{
+		for j in 8
+		{
+			printled(j,i,false);
+			delay(50,"mil") ;
+		}
+	}
+	
+	
+}
+procedure list_test(l:list)
+{
+	printledx("F", 0, l);
+	delay(1000,"mil") ;
+	##l[0].T;
+	##printledx("F", 0, l);
+	##delay(1000,"mil") ;
+	##l[0].F;
+	##printledx("F", 0, l);
+	##delay(1000,"mil") ;
+	##l[0].T;
+	##printledx("F", 0, l);
+	##delay(1000,"mil") ;
+	##l.insert(1,false);
+	##printledx("F", 0, l);
+	##delay(1000,"mil") ;
+	 ##l.delete(0);
+	##printledx("F", 0,l);
+	##delay(1000,"mil") ;
+	printledx("F", 0, l[0:5]);
+	delay(1000,"mil") ;
+	for i in len(l)
+	{
+		printled(i,4,True);
+	}
+	
+}
+procedure blink_test()
+{
+	blink(2,2,100,"mil",True);
+	blink(5,2,100,"mil",True);
+	blink(3,4,50,"mil",True);
+	blink(4,4,50,"mil",True);
+	delay(1,"seg") ;
+	blink(3,4,50,"mil",false);
+	blink(4,4,50,"mil",false);
+}
+
+
