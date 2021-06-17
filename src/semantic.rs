@@ -271,10 +271,7 @@ impl parse::Ast {
     fn scan_global_scope(&self) -> Semantic<SymbolTable<'_>> {
         let main = self
             .iter()
-            .find(|proc| {
-                let id = proc.name().as_ref();
-                unicase::eq_ascii(id.as_ref(), "main") && proc.parameters().is_empty()
-            })
+            .find(|proc| proc.is_entrypoint())
             .ok_or_else(|| Located::at(SemanticError::NoMain, self.eof().clone()))?;
 
         let mut context = Context {
@@ -338,6 +335,13 @@ impl parse::Ast {
 
         let globals = context.scope;
         Ok(globals)
+    }
+}
+
+impl parse::Procedure {
+    fn is_entrypoint(&self) -> bool {
+        let id = self.name().as_ref();
+        unicase::eq_ascii(id.as_ref(), "main") && self.parameters().is_empty()
     }
 }
 
@@ -412,7 +416,7 @@ impl<S: Sink> Context<'_, S> {
                     let types = [Type::Int, Type::Int, Type::Int, Type::Bool];
                     let location = state.location();
 
-                    self.eval_fixed_call(builtin, location, None, &args, &types, None)?;
+                    self.eval_fixed_call(builtin, location, &args, &types, None)?;
                 }
 
                 Delay { count, unit } => {
@@ -424,7 +428,7 @@ impl<S: Sink> Context<'_, S> {
 
                     let types = [Type::Int];
                     let location = count.location();
-                    self.eval_fixed_call(builtin, location, None, &[count], &types, None)?;
+                    self.eval_fixed_call(builtin, location, &[count], &types, None)?;
                 }
 
                 PrintLed { column, row, value } => {
@@ -433,7 +437,7 @@ impl<S: Sink> Context<'_, S> {
                     let location = value.location();
                     let builtin = "builtin_printled";
 
-                    self.eval_fixed_call(builtin, location, None, &args, &types, None)?;
+                    self.eval_fixed_call(builtin, location, &args, &types, None)?;
                 }
 
                 PrintLedX {
@@ -451,7 +455,7 @@ impl<S: Sink> Context<'_, S> {
                     let types = [Type::Int, object_type];
                     let location = object.location();
 
-                    self.eval_fixed_call(builtin, location, None, &args, &types, None)?;
+                    self.eval_fixed_call(builtin, location, &args, &types, None)?;
                 }
 
                 _ => todo!(),
@@ -630,7 +634,6 @@ impl<S: Sink> Context<'_, S> {
         &mut self,
         builtin: &'static str,
         at: &Location,
-        subject: Option<Local>,
         args: &[&Located<parse::Expr>],
         types: &[Type],
         output: Option<Local>,
@@ -644,10 +647,6 @@ impl<S: Sink> Context<'_, S> {
 
         let mut arg_locals = Vec::new();
         let mut ownerships = Vec::new();
-
-        if let Some(subject) = subject {
-            arg_locals.push(subject);
-        }
 
         for (arg, typ) in args.iter().copied().zip(types.iter()) {
             let local = self.sink.alloc_local();
@@ -665,7 +664,6 @@ impl<S: Sink> Context<'_, S> {
 
         let dropped = arg_locals
             .into_iter()
-            .skip(subject.iter().count())
             .zip(ownerships.into_iter())
             .zip(types.iter().cloned());
 
@@ -719,7 +717,7 @@ impl<S: Sink> Context<'_, S> {
 
     fn eval(&mut self, expr: &Located<parse::Expr>, into: Local) -> Semantic<(Type, Ownership)> {
         use parse::Expr::*;
-        use Ownership::Owned;
+        use Ownership::{Borrowed, Owned};
 
         match expr.as_ref() {
             True => {
@@ -737,8 +735,20 @@ impl<S: Sink> Context<'_, S> {
                 Ok((Type::Int, Owned))
             }
 
-            Read(target) => self.read(target, into),
-            Attr(base, attr) => self.eval_attr(base, attr, into),
+            Read(id) => {
+                let typ = self.read(id, into)?;
+                Ok((typ, Borrowed))
+            }
+
+            Attr(base, attr) => {
+                let typ = self.read_attr(base, attr, into)?;
+                Ok((typ, Owned))
+            }
+
+            Index(base, index) => {
+                let typ = self.read_index(base, index, into)?;
+                Ok((typ, Owned))
+            }
 
             Len(expr) => {
                 self.eval_len(expr, into)?;
@@ -751,7 +761,7 @@ impl<S: Sink> Context<'_, S> {
                 let types = [Type::Int, Type::Bool];
                 let location = value.location();
 
-                self.eval_fixed_call(builtin, location, None, &args, &types, Some(into))?;
+                self.eval_fixed_call(builtin, location, &args, &types, Some(into))?;
                 Ok((Type::List, Owned))
             }
 
@@ -958,12 +968,12 @@ impl<S: Sink> Context<'_, S> {
         }
     }
 
-    fn eval_attr(
+    fn read_attr(
         &mut self,
         base: &Located<parse::Expr>,
         attr: &Located<Identifier>,
         into: Local,
-    ) -> Semantic<(Type, Ownership)> {
+    ) -> Semantic<Type> {
         const ATTRS: &'static [((Type, NoCase<&'static str>), (&'static str, Type))] = &[
             (
                 (Type::Mat, NoCase::new("shapeF")),
@@ -990,18 +1000,17 @@ impl<S: Sink> Context<'_, S> {
                 )
             })?;
 
-        self.eval_fixed_call(getter, attr.location(), None, &[base], &[typ], Some(into))?;
-        Ok((result, Ownership::Owned))
+        self.eval_fixed_call(getter, attr.location(), &[base], &[typ], Some(into))?;
+        Ok(result)
     }
 
-    fn read(&mut self, target: &parse::Target, into: Local) -> Semantic<(Type, Ownership)> {
-        let var = target.var();
-        let var = match self.scope.lookup(var)? {
+    fn read(&mut self, target: &Located<Identifier>, into: Local) -> Semantic<Type> {
+        let var = match self.scope.lookup(target)? {
             Named::Var(var) => var,
             Named::Procs { .. } => {
                 return Err(Located::at(
-                    SemanticError::ExpectedVar(var.as_ref().clone()),
-                    var.location().clone(),
+                    SemanticError::ExpectedVar(target.as_ref().clone()),
+                    target.location().clone(),
                 ))
             }
         };
@@ -1015,90 +1024,84 @@ impl<S: Sink> Context<'_, S> {
                 .push(Instruction::LoadGlobal(global.clone(), into)),
         }
 
-        let mut typ = var.typ;
-        let mut ownership = Ownership::Borrowed;
+        Ok(var.typ)
+    }
 
-        for index in target.indices() {
-            use parse::Index;
+    fn read_index(
+        &mut self,
+        base: &Located<parse::Expr>,
+        index: &Located<parse::Index>,
+        into: Local,
+    ) -> Semantic<Type> {
+        use parse::Index;
 
-            let expect_mat = || {
-                (typ == Type::Mat).then(|| ()).ok_or_else(|| {
+        let base_type = self.type_check(base)?;
+
+        let expect_mat = || {
+            (base_type == Type::Mat).then(|| ()).ok_or_else(|| {
+                Located::at(
+                    SemanticError::ExpectedType(Type::Mat, base_type),
+                    base.location().clone(),
+                )
+            })
+        };
+
+        let expect_list_or_mat = || {
+            (base_type == Type::List || base_type == Type::Mat)
+                .then(|| ())
+                .ok_or_else(|| {
                     Located::at(
-                        SemanticError::ExpectedType(Type::Mat, typ),
-                        target.var().location().clone(),
+                        SemanticError::ExpectedTwo(Type::List, Type::Mat, base_type),
+                        base.location().clone(),
                     )
                 })
-            };
+        };
 
-            let expect_list_or_mat = || {
-                (typ == Type::List || typ == Type::Mat)
-                    .then(|| ())
-                    .ok_or_else(|| {
-                        Located::at(
-                            SemanticError::ExpectedTwo(Type::List, Type::Mat, typ),
-                            target.var().location().clone(),
-                        )
-                    })
-            };
+        let (builtin, typ, args) = match index.as_ref() {
+            Index::Single(expr) => {
+                expect_list_or_mat()?;
+                let (builtin, typ) = if base_type == Type::List {
+                    ("builtin_index_list", Type::Bool)
+                } else {
+                    ("builtin_index_row_mat", Type::List)
+                };
 
-            let (builtin, next_type, args) = match index.as_ref() {
-                Index::Single(expr) => {
-                    expect_list_or_mat()?;
-                    let (builtin, next_type) = if typ == Type::List {
-                        ("builtin_index_list", Type::Bool)
-                    } else {
-                        ("builtin_index_row_mat", Type::List)
-                    };
-
-                    (builtin, next_type, vec![expr])
-                }
-
-                Index::Range(from, to) => {
-                    expect_list_or_mat()?;
-                    let builtin = if typ == Type::List {
-                        "builtin_slice_list"
-                    } else {
-                        "builtin_slice_mat"
-                    };
-
-                    (builtin, typ, vec![from, to])
-                }
-
-                Index::Indirect(row, column) => {
-                    expect_mat()?;
-                    ("builtin_index_entry_mat", Type::Bool, vec![row, column])
-                }
-
-                Index::Transposed(column) => {
-                    expect_mat()?;
-                    ("builtin_index_column_mat", Type::List, vec![column])
-                }
-            };
-
-            const TYPES: [Type; 2] = [Type::Int, Type::Int];
-
-            let location = index.location();
-            let types = &TYPES[..args.len()];
-
-            if destructor(typ, ownership).is_none() {
-                self.eval_fixed_call(builtin, location, Some(into), &args, types, Some(into))?;
-            } else {
-                self.ephemeral(|this, local| {
-                    this.eval_fixed_call(builtin, location, Some(into), &args, types, Some(local))?;
-
-                    this.drop(into, typ, ownership);
-                    this.sink.push(Instruction::Move(local, into));
-
-                    // Se tomó ownership con Instruction::Move(), no se debe hacer drop
-                    Ok((Type::Int, Ownership::Borrowed, ()))
-                })?;
+                (builtin, typ, vec![base, expr])
             }
 
-            ownership = Ownership::Owned;
-            typ = next_type;
-        }
+            Index::Range(from, to) => {
+                expect_list_or_mat()?;
+                let builtin = if base_type == Type::List {
+                    "builtin_slice_list"
+                } else {
+                    "builtin_slice_mat"
+                };
 
-        Ok((typ, ownership))
+                (builtin, base_type, vec![base, from, to])
+            }
+
+            Index::Indirect(row, column) => {
+                expect_mat()?;
+                (
+                    "builtin_index_entry_mat",
+                    Type::Bool,
+                    vec![base, row, column],
+                )
+            }
+
+            Index::Transposed(column) => {
+                expect_mat()?;
+                ("builtin_index_column_mat", Type::List, vec![base, column])
+            }
+        };
+
+        let types = [base_type, Type::Int, Type::Int];
+        let types = &types[..args.len()];
+
+        let location = index.location();
+        self.eval_fixed_call(builtin, location, &args, types, Some(into))?;
+
+        Ok(typ)
     }
 
     fn expire(mut self) -> S {
