@@ -49,6 +49,7 @@ except according to those terms.
     <style id="type"       name="Data Type"     map-to="def:type"/>
     <style id="boolean"    name="Boolean value" map-to="def:boolean"/>
     <style id="identifier" name="Identifier"    map-to="def:identifier"/>
+    <style id="constant"   name="constant"      map-to="def:constant"/>
     <style id="number"     name="Number"        map-to="def:number"/>
     <style id="scope"      name="Scope"         map-to="def:preprocessor"/>
     <style id="attribute"  name="Attribute"     map-to="def:preprocessor"/>
@@ -64,8 +65,8 @@ except according to those terms.
       <keyword>procedure</keyword>
     </context>
 
-    <context id="type" style-ref="keyword">
-      <keyword>type</keyword>
+    <context id="type" style-ref="constant">
+      <keyword>false</keyword>
     </context>
 
     <context id="keywords" style-ref="keyword">
@@ -74,6 +75,7 @@ except according to those terms.
       <keyword>in</keyword>
       <keyword>step</keyword>
       <keyword>call</keyword>
+      <keyword>type</keyword>
     </context>
 
     <context id="reserved" style-ref="keyword">
@@ -103,7 +105,6 @@ except according to those terms.
 
     <context id="boolean" style-ref="boolean">
       <keyword>true</keyword>
-      <keyword>false</keyword>
     </context>
 
     <define-regex id="int-suffix" extended="true">

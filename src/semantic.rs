@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::{self, Display},
     rc::Rc,
 };
@@ -13,15 +13,42 @@ use crate::{
     source::{Located, Location},
 };
 
+#[derive(Default)]
 struct SymbolTable<'a> {
     outer: Option<&'a SymbolTable<'a>>,
     symbols: HashMap<Identifier, Named>,
+    lifted: HashSet<Identifier>,
 }
 
 impl SymbolTable<'_> {
-    fn lookup(&self, id: &Located<Identifier>) -> Semantic<&Named> {
+    fn is_lifted(&self, id: &Identifier) -> bool {
         let mut table = self;
-        let named = loop {
+
+        loop {
+            if table.lifted.contains(id) {
+                break true;
+            }
+
+            match table.outer {
+                None => break false,
+                Some(outer) => table = outer,
+            }
+        }
+    }
+
+    fn lookup(&self, id: &Located<Identifier>) -> Semantic<&Named> {
+        self.try_lookup(id).ok_or_else(|| {
+            Located::at(
+                SemanticError::Undefined(id.as_ref().clone()),
+                id.location().clone(),
+            )
+        })
+    }
+
+    fn try_lookup(&self, id: &Located<Identifier>) -> Option<&Named> {
+        let mut table = self;
+
+        loop {
             match table.symbols.get(id) {
                 Some(id) => break Some(id),
 
@@ -30,14 +57,7 @@ impl SymbolTable<'_> {
                     None => break None,
                 },
             }
-        };
-
-        named.ok_or_else(|| {
-            Located::at(
-                SemanticError::Undefined(id.as_ref().clone()),
-                id.location().clone(),
-            )
-        })
+        }
     }
 }
 
@@ -85,6 +105,18 @@ impl Display for Type {
 enum Ownership {
     Owned,
     Borrowed,
+}
+
+#[derive(Copy, Clone)]
+enum AssignmentMode {
+    /// Asignación en main() que no inicializa una global
+    Main,
+
+    /// Asignación en main() que inicializa una global
+    GlobalInit,
+
+    /// Ninguna de las otras opciones es correcta
+    Normal,
 }
 
 trait Sink: Default {
@@ -222,6 +254,9 @@ pub enum SemanticError {
     #[error("Objects of type `{0}` have no attribute `{1}`")]
     NoSuchAttr(Type, Identifier),
 
+    #[error("This global statement is in conflict with another symbol")]
+    GlobalLiftConflict,
+
     #[error("Floats are not supported by this implementation")]
     Floats,
 }
@@ -237,10 +272,12 @@ impl parse::Ast {
                 let mut context = Context {
                     scope: SymbolTable {
                         outer: Some(&global_scope),
-                        symbols: Default::default(),
+                        ..Default::default()
                     },
 
                     sink: Listing::for_parameters(parameters),
+                    procedure: Some(procedure),
+                    is_toplevel: Default::default(),
                 };
 
                 let symbol = context.scan_procedure(procedure)?;
@@ -271,19 +308,18 @@ impl parse::Ast {
     fn scan_global_scope(&self) -> Semantic<SymbolTable<'_>> {
         let main = self
             .iter()
-            .find(|proc| {
-                let id = proc.name().as_ref();
-                unicase::eq_ascii(id.as_ref(), "main") && proc.parameters().is_empty()
-            })
+            .find(|proc| proc.is_entrypoint())
             .ok_or_else(|| Located::at(SemanticError::NoMain, self.eof().clone()))?;
 
         let mut context = Context {
             scope: SymbolTable {
                 outer: None,
-                symbols: Default::default(),
+                ..Default::default()
             },
 
             sink: TypeCheck,
+            procedure: None,
+            is_toplevel: Default::default(),
         };
 
         let mut statements = main.statements().iter();
@@ -341,9 +377,18 @@ impl parse::Ast {
     }
 }
 
+impl parse::Procedure {
+    fn is_entrypoint(&self) -> bool {
+        let id = self.name().as_ref();
+        unicase::eq_ascii(id.as_ref(), "main") && self.parameters().is_empty()
+    }
+}
+
 struct Context<'a, S: Sink> {
     scope: SymbolTable<'a>,
     sink: S,
+    procedure: Option<&'a parse::Procedure>,
+    is_toplevel: bool,
 }
 
 impl<S: Sink> Context<'_, S> {
@@ -351,6 +396,8 @@ impl<S: Sink> Context<'_, S> {
         let types = self.parameter_types(procedure)?;
 
         self.subscope(|this| {
+            this.is_toplevel = true;
+
             let parameters = procedure.parameters().iter();
             for (i, (parameter, typ)) in parameters.zip(types.iter().copied()).enumerate() {
                 let name = parameter.name();
@@ -378,8 +425,28 @@ impl<S: Sink> Context<'_, S> {
     }
 
     fn scan_statements(&mut self, statements: &[parse::Statement]) -> Semantic<()> {
+        let is_entrypoint = self
+            .procedure
+            .map(|proc| proc.is_entrypoint())
+            .unwrap_or(false);
+
+        let mut initialized_globals = HashSet::new();
+        let mut assignment_mode = match (is_entrypoint, self.is_toplevel) {
+            (true, true) => AssignmentMode::GlobalInit,
+            (true, false) => AssignmentMode::Main,
+            _ => AssignmentMode::Normal,
+        };
+
         for statement in statements.iter() {
             use parse::{ObjectKind::*, Statement::*, TimeUnit::*};
+            use AssignmentMode::*;
+
+            assignment_mode = match (assignment_mode, statement) {
+                (GlobalInit, Assignment { .. }) => GlobalInit,
+                (GlobalInit, _) => Main,
+
+                _ => assignment_mode,
+            };
 
             match statement {
                 If { condition, body } => self.scan_conditional(condition, body)?,
@@ -412,7 +479,7 @@ impl<S: Sink> Context<'_, S> {
                     let types = [Type::Int, Type::Int, Type::Int, Type::Bool];
                     let location = state.location();
 
-                    self.eval_fixed_call(builtin, location, None, &args, &types, None)?;
+                    self.eval_fixed_call(builtin, location, &args, &types, None)?;
                 }
 
                 Delay { count, unit } => {
@@ -424,7 +491,7 @@ impl<S: Sink> Context<'_, S> {
 
                     let types = [Type::Int];
                     let location = count.location();
-                    self.eval_fixed_call(builtin, location, None, &[count], &types, None)?;
+                    self.eval_fixed_call(builtin, location, &[count], &types, None)?;
                 }
 
                 PrintLed { column, row, value } => {
@@ -433,7 +500,7 @@ impl<S: Sink> Context<'_, S> {
                     let location = value.location();
                     let builtin = "builtin_printled";
 
-                    self.eval_fixed_call(builtin, location, None, &args, &types, None)?;
+                    self.eval_fixed_call(builtin, location, &args, &types, None)?;
                 }
 
                 PrintLedX {
@@ -451,7 +518,29 @@ impl<S: Sink> Context<'_, S> {
                     let types = [Type::Int, object_type];
                     let location = object.location();
 
-                    self.eval_fixed_call(builtin, location, None, &args, &types, None)?;
+                    self.eval_fixed_call(builtin, location, &args, &types, None)?;
+                }
+
+                GlobalLift(id) => self.global_lift(id)?,
+
+                Assignment { targets, values } => {
+                    for (target, value) in break_assignment(targets, values)? {
+                        let var = target.var().as_ref().as_ref();
+                        let (global_init, mode) = match assignment_mode {
+                            GlobalInit if initialized_globals.get(var).is_none() => {
+                                (true, GlobalInit)
+                            }
+
+                            GlobalInit => (false, Main),
+                            _ => (false, assignment_mode),
+                        };
+
+                        self.assign(mode, target, value)?;
+
+                        if global_init {
+                            initialized_globals.insert(var.clone());
+                        }
+                    }
                 }
 
                 _ => todo!(),
@@ -475,7 +564,7 @@ impl<S: Sink> Context<'_, S> {
             Ok((Type::Bool, Ownership::Owned, ()))
         })?;
 
-        self.scan_statements(body)?;
+        self.subscope(|this| this.scan_statements(body))?;
         self.sink.push(Instruction::SetLabel(if_false));
 
         Ok(())
@@ -598,6 +687,128 @@ impl<S: Sink> Context<'_, S> {
         Ok(())
     }
 
+    fn global_lift(&mut self, id: &Located<Identifier>) -> Semantic<()> {
+        match self.scope.lookup(id)? {
+            Named::Var(Variable {
+                access: Access::Global(_),
+                ..
+            }) => {
+                self.scope.lifted.insert(id.as_ref().clone());
+                Ok(())
+            }
+
+            _ => Err(Located::at(
+                SemanticError::GlobalLiftConflict,
+                id.location().clone(),
+            )),
+        }
+    }
+
+    fn assign(
+        &mut self,
+        mode: AssignmentMode,
+        target: &Located<parse::Target>,
+        value: &Located<parse::Expr>,
+    ) -> Semantic<()> {
+        use AssignmentMode::*;
+
+        if !target.indices().is_empty() {
+            todo!();
+        }
+
+        let value_type = self.type_check(value)?;
+        let target = target.var();
+
+        let should_override = |var: &Variable, scope: &SymbolTable<'_>| {
+            matches!(&var.access, Access::Global(_)) && !scope.is_lifted(target.as_ref())
+        };
+
+        let var = match (mode, self.scope.try_lookup(target)) {
+            (
+                GlobalInit,
+                Some(Named::Var(Variable {
+                    access: Access::Global(global),
+                    ..
+                })),
+            ) => {
+                let global = global.clone();
+
+                return self.ephemeral(|this, local| {
+                    this.eval_owned(value, local)?;
+                    this.sink.push(Instruction::StoreGlobal(local, global));
+
+                    // Esto evita un drop de la local
+                    Ok((Type::Int, Ownership::Owned, ()))
+                });
+            }
+
+            (Main, Some(Named::Var(var))) => var,
+            (_, Some(Named::Var(var))) if !should_override(var, &self.scope) => var,
+
+            _ => {
+                let local = self.sink.alloc_local();
+                self.eval_owned(value, local)?;
+
+                let named = Named::Var(Variable {
+                    access: Access::Local(local),
+                    typ: value_type,
+                });
+
+                self.scope.symbols.insert(target.as_ref().clone(), named);
+                return Ok(());
+            }
+        };
+
+        if var.typ != value_type {
+            return Err(Located::at(
+                SemanticError::ExpectedType(var.typ, value_type),
+                value.location().clone(),
+            ));
+        }
+
+        let must_drop = destructor(var.typ, Ownership::Owned).is_some();
+        match (&var.access, must_drop) {
+            (Access::Local(local), false) => {
+                let local = *local;
+                self.eval(value, local)?;
+            }
+
+            (Access::Local(local), true) => {
+                let local = *local;
+
+                self.ephemeral(|this, value_local| {
+                    this.eval(value, value_local)?;
+                    this.drop(local, value_type, Ownership::Owned);
+                    this.sink.push(Instruction::Move(value_local, local));
+
+                    // Se evita otro drop
+                    Ok((Type::Int, Ownership::Owned, ()))
+                })?;
+            }
+
+            (Access::Global(global), drop) => {
+                let global = global.clone();
+                self.ephemeral(|this, value_local| {
+                    this.eval(value, value_local)?;
+                    if drop {
+                        let global = global.clone();
+
+                        this.ephemeral(|this, old_local| {
+                            this.sink.push(Instruction::LoadGlobal(global, old_local));
+                            Ok((value_type, Ownership::Owned, ()))
+                        })?;
+                    }
+
+                    this.sink
+                        .push(Instruction::StoreGlobal(value_local, global));
+                    Ok((Type::Int, Ownership::Owned, ()))
+                })?;
+            }
+        }
+
+        Ok(())
+    }
+
     fn parameter_types(&mut self, procedure: &parse::Procedure) -> Semantic<Vec<Type>> {
         procedure
             .parameters()
@@ -616,10 +827,12 @@ impl<S: Sink> Context<'_, S> {
         let mut context = Context {
             scope: SymbolTable {
                 outer: Some(&self.scope),
-                symbols: Default::default(),
+                ..Default::default()
             },
 
             sink: TypeCheck,
+            procedure: None,
+            is_toplevel: Default::default(),
         };
 
         let (typ, _) = context.eval(expr, Local::default())?;
@@ -630,7 +843,6 @@ impl<S: Sink> Context<'_, S> {
         &mut self,
         builtin: &'static str,
         at: &Location,
-        subject: Option<Local>,
         args: &[&Located<parse::Expr>],
         types: &[Type],
         output: Option<Local>,
@@ -644,10 +856,6 @@ impl<S: Sink> Context<'_, S> {
 
         let mut arg_locals = Vec::new();
         let mut ownerships = Vec::new();
-
-        if let Some(subject) = subject {
-            arg_locals.push(subject);
-        }
 
         for (arg, typ) in args.iter().copied().zip(types.iter()) {
             let local = self.sink.alloc_local();
@@ -665,7 +873,6 @@ impl<S: Sink> Context<'_, S> {
 
         let dropped = arg_locals
             .into_iter()
-            .skip(subject.iter().count())
             .zip(ownerships.into_iter())
             .zip(types.iter().cloned());
 
@@ -719,7 +926,7 @@ impl<S: Sink> Context<'_, S> {
 
     fn eval(&mut self, expr: &Located<parse::Expr>, into: Local) -> Semantic<(Type, Ownership)> {
         use parse::Expr::*;
-        use Ownership::Owned;
+        use Ownership::{Borrowed, Owned};
 
         match expr.as_ref() {
             True => {
@@ -737,8 +944,20 @@ impl<S: Sink> Context<'_, S> {
                 Ok((Type::Int, Owned))
             }
 
-            Read(target) => self.read(target, into),
-            Attr(base, attr) => self.eval_attr(base, attr, into),
+            Read(id) => {
+                let typ = self.read(id, into)?;
+                Ok((typ, Borrowed))
+            }
+
+            Attr(base, attr) => {
+                let typ = self.read_attr(base, attr, into)?;
+                Ok((typ, Owned))
+            }
+
+            Index(base, index) => {
+                let typ = self.read_index(base, index, into)?;
+                Ok((typ, Owned))
+            }
 
             Len(expr) => {
                 self.eval_len(expr, into)?;
@@ -751,7 +970,7 @@ impl<S: Sink> Context<'_, S> {
                 let types = [Type::Int, Type::Bool];
                 let location = value.location();
 
-                self.eval_fixed_call(builtin, location, None, &args, &types, Some(into))?;
+                self.eval_fixed_call(builtin, location, &args, &types, Some(into))?;
                 Ok((Type::List, Owned))
             }
 
@@ -958,12 +1177,12 @@ impl<S: Sink> Context<'_, S> {
         }
     }
 
-    fn eval_attr(
+    fn read_attr(
         &mut self,
         base: &Located<parse::Expr>,
         attr: &Located<Identifier>,
         into: Local,
-    ) -> Semantic<(Type, Ownership)> {
+    ) -> Semantic<Type> {
         const ATTRS: &'static [((Type, NoCase<&'static str>), (&'static str, Type))] = &[
             (
                 (Type::Mat, NoCase::new("shapeF")),
@@ -990,18 +1209,17 @@ impl<S: Sink> Context<'_, S> {
                 )
             })?;
 
-        self.eval_fixed_call(getter, attr.location(), None, &[base], &[typ], Some(into))?;
-        Ok((result, Ownership::Owned))
+        self.eval_fixed_call(getter, attr.location(), &[base], &[typ], Some(into))?;
+        Ok(result)
     }
 
-    fn read(&mut self, target: &parse::Target, into: Local) -> Semantic<(Type, Ownership)> {
-        let var = target.var();
-        let var = match self.scope.lookup(var)? {
+    fn read(&mut self, target: &Located<Identifier>, into: Local) -> Semantic<Type> {
+        let var = match self.scope.lookup(target)? {
             Named::Var(var) => var,
             Named::Procs { .. } => {
                 return Err(Located::at(
-                    SemanticError::ExpectedVar(var.as_ref().clone()),
-                    var.location().clone(),
+                    SemanticError::ExpectedVar(target.as_ref().clone()),
+                    target.location().clone(),
                 ))
             }
         };
@@ -1015,90 +1233,84 @@ impl<S: Sink> Context<'_, S> {
                 .push(Instruction::LoadGlobal(global.clone(), into)),
         }
 
-        let mut typ = var.typ;
-        let mut ownership = Ownership::Borrowed;
+        Ok(var.typ)
+    }
 
-        for index in target.indices() {
-            use parse::Index;
+    fn read_index(
+        &mut self,
+        base: &Located<parse::Expr>,
+        index: &Located<parse::Index>,
+        into: Local,
+    ) -> Semantic<Type> {
+        use parse::Index;
 
-            let expect_mat = || {
-                (typ == Type::Mat).then(|| ()).ok_or_else(|| {
+        let base_type = self.type_check(base)?;
+
+        let expect_mat = || {
+            (base_type == Type::Mat).then(|| ()).ok_or_else(|| {
+                Located::at(
+                    SemanticError::ExpectedType(Type::Mat, base_type),
+                    base.location().clone(),
+                )
+            })
+        };
+
+        let expect_list_or_mat = || {
+            (base_type == Type::List || base_type == Type::Mat)
+                .then(|| ())
+                .ok_or_else(|| {
                     Located::at(
-                        SemanticError::ExpectedType(Type::Mat, typ),
-                        target.var().location().clone(),
+                        SemanticError::ExpectedTwo(Type::List, Type::Mat, base_type),
+                        base.location().clone(),
                     )
                 })
-            };
+        };
 
-            let expect_list_or_mat = || {
-                (typ == Type::List || typ == Type::Mat)
-                    .then(|| ())
-                    .ok_or_else(|| {
-                        Located::at(
-                            SemanticError::ExpectedTwo(Type::List, Type::Mat, typ),
-                            target.var().location().clone(),
-                        )
-                    })
-            };
+        let (builtin, typ, args) = match index.as_ref() {
+            Index::Single(expr) => {
+                expect_list_or_mat()?;
+                let (builtin, typ) = if base_type == Type::List {
+                    ("builtin_index_list", Type::Bool)
+                } else {
+                    ("builtin_index_row_mat", Type::List)
+                };
 
-            let (builtin, next_type, args) = match index.as_ref() {
-                Index::Single(expr) => {
-                    expect_list_or_mat()?;
-                    let (builtin, next_type) = if typ == Type::List {
-                        ("builtin_index_list", Type::Bool)
-                    } else {
-                        ("builtin_index_row_mat", Type::List)
-                    };
-
-                    (builtin, next_type, vec![expr])
-                }
-
-                Index::Range(from, to) => {
-                    expect_list_or_mat()?;
-                    let builtin = if typ == Type::List {
-                        "builtin_slice_list"
-                    } else {
-                        "builtin_slice_mat"
-                    };
-
-                    (builtin, typ, vec![from, to])
-                }
-
-                Index::Indirect(row, column) => {
-                    expect_mat()?;
-                    ("builtin_index_entry_mat", Type::Bool, vec![row, column])
-                }
-
-                Index::Transposed(column) => {
-                    expect_mat()?;
-                    ("builtin_index_column_mat", Type::List, vec![column])
-                }
-            };
-
-            const TYPES: [Type; 2] = [Type::Int, Type::Int];
-
-            let location = index.location();
-            let types = &TYPES[..args.len()];
-
-            if destructor(typ, ownership).is_none() {
-                self.eval_fixed_call(builtin, location, Some(into), &args, types, Some(into))?;
-            } else {
-                self.ephemeral(|this, local| {
-                    this.eval_fixed_call(builtin, location, Some(into), &args, types, Some(local))?;
-
-                    this.drop(into, typ, ownership);
-                    this.sink.push(Instruction::Move(local, into));
-
-                    // Se tomó ownership con Instruction::Move(), no se debe hacer drop
-                    Ok((Type::Int, Ownership::Borrowed, ()))
-                })?;
+                (builtin, typ, vec![base, expr])
             }
 
-            ownership = Ownership::Owned;
-            typ = next_type;
-        }
+            Index::Range(from, to) => {
+                expect_list_or_mat()?;
+                let builtin = if base_type == Type::List {
+                    "builtin_slice_list"
+                } else {
+                    "builtin_slice_mat"
+                };
 
-        Ok((typ, ownership))
+                (builtin, base_type, vec![base, from, to])
+            }
+
+            Index::Indirect(row, column) => {
+                expect_mat()?;
+                (
+                    "builtin_index_entry_mat",
+                    Type::Bool,
+                    vec![base, row, column],
+                )
+            }
+
+            Index::Transposed(column) => {
+                expect_mat()?;
+                ("builtin_index_column_mat", Type::List, vec![base, column])
+            }
+        };
+
+        let types = [base_type, Type::Int, Type::Int];
+        let types = &types[..args.len()];
+
+        let location = index.location();
+        self.eval_fixed_call(builtin, location, &args, types, Some(into))?;
+
+        Ok(typ)
     }
 
     fn expire(mut self) -> S {
@@ -1127,10 +1339,12 @@ impl<S: Sink> Context<'_, S> {
         let mut subcontext = Context {
             scope: SymbolTable {
                 outer: Some(&self.scope),
-                symbols: Default::default(),
+                ..Default::default()
             },
 
             sink,
+            procedure: self.procedure,
+            is_toplevel: false,
         };
 
         let result = callback(&mut subcontext);

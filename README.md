@@ -23,7 +23,6 @@ linestretch: 1.5
 bibliography: doc/bibliografia.bib
 csl: /home/josfemova/UsefulRepos/styles/ieee.csl
 nocite: |
-  @rust-gui, @gtk-rs ,@gtk-sourceview
 ...
 
 \maketitle
@@ -208,6 +207,20 @@ realidad. Lex y Yacc forman parte de la realidad, no se niega eso, pero hubo un 
 necesariamente deberían ser las única forma de escribir Tomando en consideración lo discutido anteriormente,
 el equipo consideró que lo mejor sería prescindir de estas herramientas, puesto que era lo más provechoso
 para nuestro proceso de aprendizaje.
+
+## 2.5. Uso de GTK como toolkit gráfico
+
+Orientados al desarrollo de la interfaz gráfica de estilo editor de código, el equipo comienza con  investigación acerca de un toolkit de desarrollo gráfico en Rust, del que se tenía conocimiento, Egui [rust-gui].  Tras la lectura minuciosa de la documentación dada por los creadores, y algunas pruebas prácticas el equipo toma la decisión de investigar mas acerca de otras opciones, pues, a pesar de las ventajas de trabajar en un toolkit gráfico nativo a Rust como Egui, específicamente el procesador de texto es altamente rudimentario, por lo que utilizarlo para implementar un editor representaba un reto mucho mayor de lo esperado.
+
+Durante la investigación se descartan otras herramientas como Druid, Iced , Azul, entre otros, por la misma razón que egui, espacios de texto poco versátiles. Sin embargo, se encontró un proyecto de bindings de GTK para rust.[gtk-rs]. Este toolkit en específico posee la implementación de una herramienta especializada de GTK para realizar interfaces gráficas para editores de código conocido como el GTK-Sourceview [gtk-sourceview]. Se investigan más a fondo las características de dicha herramienta y se valoran sus beneficios sobre las desventajas de trabajar con bindings de GTK que no son nativos a Rust.
+
+Finalmente se toma la decisión de trabajar con GTK por las siguientes razones:
+- Posesión de herramienta especializada para el desarrollo de editores de código (gtksourceview).
+- Posibilidad de utilizar Glade para el diseño de la interfaz.
+- Similitud con otros toolkits con los cuales el equipo ya tenía experiencia.
+- Documentación amplia en para GTK [gtk-rs] [gtk-doc].
+- Documentación amplia para gtksourceview[gtk-doc].
+
 
 # 3. Problemas conocidos
 
@@ -425,6 +438,89 @@ conexiones y se logró confirmar que esto era el origen del problema.
 ### Bibliografía
 
 - Para la verificación de las conexiones fue necesario consultar [@esp8266-pinout] y [@shiftregister-datasheet].
+
+## 5.4. Propiedad de variables de GTK y acciones de botones
+
+### Descripción
+
+Al implementar las funciones de respuesta para los distintos botones del IDE fue necesario utilizar funciones que reciben como parámetro otras funciones que utilizan move. Como resultado la propiedad de estas variables es tomada por la función y devuelta al finalizar, sin embargo si se trata de una función de un botón, dentro de otro botón, como cuadros de selección de archivos, la variable no es correctamente devuelta y causa que el programa falle.
+
+### Intentos de solución
+
+1.  Se intentó utilizar punteros tipo RC sin ningún éxito, pues no pueden ser mutables.
+2.  Se buscaron ejemplos en el git de gtk para rust[gtk-rs] donde esto sucediera, pero no se encontró ninguno. 
+
+### Solución encontrada
+
+Para preservar la propiedad de las variables antes de llamar una de estas funciones anidadas se debe crear una copia de la variable utilizando `clone()`. Y debe ser esta nueva variable clonada con la que trabaje la función. Esto permite modificar los valores del objeto de gtk sin perder la propiedad y así poder utilizarlo en las siguientes definiciones de función.  
+
+### Conclusiones
+
+- El sistema de propiedad de variables de Rust puede complicar la creación de código si no se sabe utilizar correctamente.
+- Existe una "rigidez" en la forma de asignar funciones a botones en el toolkit de GTK adaptado a Rust, producto de la propiedad de variables.
+  
+### Recomendaciones
+
+- Conocer plenamente el sistema de propiedad de variables de Rust.
+- Tener claridad acerca de las limitaciones que trae utilizar bindings de un software no nativo a rust.
+  
+### Bibliografía
+
+Para solucionar este problema fue necesario recurrir a [gtk-rs] y [rustbook].
+ 
+## 5.5. Guardar el nombre del archivo actual durante tiempo de ejecución
+
+### Descripción
+
+Se desea mantener una variable durante el tiempo de ejecución que contenga la ruta del archivo que se está trabajando. Sin embargo, por la forma asincrónica en que es implementado GTK para Rust mantener tal variable de manera sencilla no era posible.
+
+### Intentos de solución
+
+1. Se consideró utilizar un puntero de tipo RC, sin embargo por no ser mutables no brindaron solución.
+   
+### Solución encontrada
+
+Se observa que las variables comunes no se pueden usar asincrónicamente como las de gtk. Ya que lo que se busca es almacenar y editar un string y hay muchos objetos de gtk que pueden hacer esto, para solucionarlo se crea un objeto de GTK (label) no visible para el usuario, que contiene la ruta del archivo en que se está trabajando.
+
+### Conclusiones
+
+- No existe tal cosa como variables globales en rust.
+- Es posible valerse de objetos de GTK para implementar variables globales en rust.
+  
+### Recomendaciones
+
+- Conocer las limitaciones del lenguaje en que se trabaja y explorar formas en que estas limitaciones pueden ser superadas.
+  
+### Bibliografía
+
+Para solucionar este problema fue necesario recurrir a [gtk-doc].
+ 
+
+## 5.6. Implementación de syntax highlights en GTKsourceview
+
+### Descripción
+
+Al momento de querer implementar un syntaxhighlight se discutieron distintas posibilidades.
+
+### Intentos de solución
+
+1. Originalmente se deseaba utilizar el análisis realizado por el lexer, para colorear cada palabra en el editor, pues se conocía su categoría como token y su posición exacta. Sin embargo, sourceview no cuenta con ninguna forma integrada de cambiar el color de una sola palabra manualmente.
+   
+### Solución encontrada
+
+Sourceview, sin embargo, si tiene una manera integrada de hacer syntax highlights. Utiliza archivos .lang para realizarlo. Para implementar un highlight personalizado fue necesario tomar otro archivo .lang (originalmente c pero después el de rust) y modificarlo agregando y quitando las palabras reservadas necesarias.
+
+### Conclusiones
+
+- Es posible implementar syntax highlights personalizados en GTK si se sabe trabajar en archivos .lang (xml)
+  
+### Recomendaciones
+
+- Implementar syntax highlights para gtksourceview utilizando archivos .lang
+  
+### Bibliografía
+
+Para solucionar este problema fue necesario recurrir a [sourceview-doc] y [gtk-sourceview].
 
 
 # 6. Conclusiones y Recomendaciones del Proyecto

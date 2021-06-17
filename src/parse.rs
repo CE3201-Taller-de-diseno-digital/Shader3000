@@ -91,6 +91,8 @@ pub enum Statement {
         args: Vec<Located<Expr>>,
     },
 
+    GlobalLift(Located<Identifier>),
+
     Assignment {
         targets: Vec<Located<Target>>,
         values: Vec<Located<Expr>>,
@@ -147,8 +149,9 @@ pub enum Expr {
     True,
     False,
     Integer(i32),
-    Read(Target),
+    Read(Located<Identifier>),
     Attr(Box<Located<Expr>>, Located<Identifier>),
+    Index(Box<Located<Expr>>, Box<Located<Index>>),
     Len(Box<Located<Expr>>),
     Range(Box<Located<Expr>>, Box<Located<Expr>>),
     List(Vec<Located<Expr>>),
@@ -419,7 +422,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
         let name = self.id()?;
 
         self.expect(Token::OpenParen)?;
-        let parameters = self.comma_separated(Parser::parameter, true)?;
+        let parameters = self.comma_separated(Self::parameter, true)?;
         self.expect(Token::CloseParen)?;
 
         let statements = self.statement_block()?;
@@ -450,7 +453,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
 
         let mut statements = Vec::new();
         loop {
-            match self.attempt(Parser::statement) {
+            match self.attempt(Self::statement) {
                 Ok(statement) => statements.push(statement),
                 Err(Failure::Weak(error)) => {
                     self.expect(Token::CloseCurly)
@@ -465,17 +468,18 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
     }
 
     fn statement(&mut self) -> Parse<Statement> {
-        match self.lookahead(Parser::next)?.into_inner() {
+        match self.lookahead(Self::next)?.into_inner() {
             Token::Keyword(Keyword::If) => self.if_statement(),
             Token::Keyword(Keyword::For) => self.for_statement(),
             Token::Keyword(Keyword::Call) => self.user_call(),
+            Token::Keyword(Keyword::Global) => self.global_lift(),
             Token::Keyword(Keyword::Blink) => self.blink(),
             Token::Keyword(Keyword::Delay) => self.delay(),
             Token::Keyword(Keyword::PrintLed) => self.print_led(),
             Token::Keyword(Keyword::PrintLedX) => self.print_led_x(),
 
             Token::Id(_) => {
-                let targets = self.comma_separated(Parser::target, false)?;
+                let targets = self.comma_separated(Self::target, false)?;
                 match self.lookahead(|s| s.expect(Token::Assign).weak()) {
                     Err(Failure::Weak(_)) if targets.len() == 1 => {
                         self.method_call(targets.into_iter().next().unwrap())
@@ -531,6 +535,14 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
         self.expect(Token::Semicolon)?;
 
         Ok(Statement::UserCall { procedure, args })
+    }
+
+    fn global_lift(&mut self) -> Parse<Statement> {
+        self.keyword(Keyword::Global)?;
+        let id = self.id()?;
+        self.expect(Token::Semicolon)?;
+
+        Ok(Statement::GlobalLift(id))
     }
 
     fn blink(&mut self) -> Parse<Statement> {
@@ -666,7 +678,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
 
     fn assignment(&mut self, targets: Vec<Located<Target>>) -> Parse<Statement> {
         self.expect(Token::Assign)?;
-        let values = self.comma_separated(Parser::expr, false)?;
+        let values = self.comma_separated(Self::expr, false)?;
         self.expect(Token::Semicolon)?;
 
         Ok(Statement::Assignment { targets, values })
@@ -678,7 +690,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
             None => Vec::new(),
 
             Some(()) => {
-                let args = self.comma_separated(Parser::expr, true)?;
+                let args = self.comma_separated(Self::expr, true)?;
                 self.expect(Token::CloseParen)?;
 
                 args
@@ -693,7 +705,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
 
         let mut indices = Vec::new();
         loop {
-            match self.optional(Parser::index)? {
+            match self.optional(Self::index)? {
                 None => break,
                 Some(index) => indices.push(index),
             }
@@ -716,7 +728,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
             None => {
                 let first = self.expr().strict()?;
 
-                match self.lookahead(|s| s.next())?.into_inner() {
+                match self.lookahead(Self::next)?.into_inner() {
                     Token::Colon => {
                         self.expect(Token::Colon)?;
                         Index::Range(first, self.expr().strict()?)
@@ -766,7 +778,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
 
     fn expr(&mut self) -> Parse<Located<Expr>> {
         let mut expr = self.delimited_expr()?;
-        while let Some(op) = self.optional(Parser::binary_operator)? {
+        while let Some(op) = self.optional(Self::binary_operator)? {
             let tail = self.delimited_expr().strict()?;
             expr = Expr::join(expr, op, tail);
         }
@@ -776,11 +788,11 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
 
     fn delimited_expr(&mut self) -> Parse<Located<Expr>> {
         let terminal = |s: &mut _, expr| {
-            let (location, _) = Parser::next(s)?.split();
+            let (location, _) = Self::next(s)?.split();
             Ok((expr, location))
         };
 
-        let (mut expr, mut location) = match self.lookahead(Parser::next)?.into_inner() {
+        let (mut expr, mut location) = match self.lookahead(Self::next)?.into_inner() {
             Token::Keyword(Keyword::True) => terminal(self, Expr::True)?,
             Token::Keyword(Keyword::False) => terminal(self, Expr::False)?,
             Token::IntLiteral(integer) => terminal(self, Expr::Integer(integer))?,
@@ -841,15 +853,17 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
 
             Token::OpenSquare => {
                 let (start, _) = self.next()?.split();
-                let items = self.comma_separated(Parser::expr, true)?;
+                let items = self.comma_separated(Self::expr, true)?;
 
                 self.expect(Token::CloseSquare)?;
                 (Expr::List(items), Location::span(start, &self.last_known))
             }
 
             Token::Id(_) => {
-                let (location, target) = self.target()?.split();
-                (Expr::Read(target), location)
+                let id = self.id()?;
+                let location = id.location().clone();
+
+                (Expr::Read(id), location)
             }
 
             _ => {
@@ -858,12 +872,27 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
             }
         };
 
-        while let Some(()) = self.optional(|s| s.expect(Token::Period).weak())? {
-            let attr = self.id()?;
+        loop {
             let old_location = location.clone();
 
-            location = Location::span(old_location.clone(), attr.location());
-            expr = Expr::Attr(Box::new(Located::at(expr, old_location)), attr);
+            match self.lookahead(Self::next)?.into_inner() {
+                Token::Period => {
+                    self.expect(Token::Period)?;
+                    let attr = self.id()?;
+
+                    location = Location::span(old_location.clone(), attr.location());
+                    expr = Expr::Attr(Box::new(Located::at(expr, old_location)), attr);
+                }
+
+                Token::OpenSquare => {
+                    let index = Box::new(self.index()?);
+
+                    location = Location::span(old_location.clone(), index.location());
+                    expr = Expr::Index(Box::new(Located::at(expr, old_location)), index);
+                }
+
+                _ => break,
+            }
         }
 
         Ok(Located::at(expr, location))

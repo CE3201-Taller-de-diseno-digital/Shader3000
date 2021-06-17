@@ -1,0 +1,42 @@
+procedure main() {
+  for i in 5{
+  call f([
+                    [false,false,false,true,true,true,false,false,false,false,true,false,false,false,true,false,false,false,true,false,true,true,true,false,false,true,true,true,false,true,false,true,false,false,false],
+
+                    [false,false,false,true,false,false,true,false,false,true,false,true,false,false,true,true,false,false,true,false,false,true,false,false,true,false,false,true,false,true,false,true,false,false,false],
+
+                    [false,false,false,true,false,false,true,false,true,false,false,false,true,false,true,true,false,false,true,false,false,true,false,false,true,false,false,false,false,true,false,true,false,false,false],
+
+                    [false,false,false,true,false,false,true,false,true,false,false,false,true,false,true,false,true,false,true,false,false,true,false,false,true,false,false,false,false,true,false,true,false,false,false],
+
+                    [false,false,false,true,true,true,false,false,true,true,true,true,true,false,true,false,true,false,true,false,false,true,false,false,true,false,false,false,false,true,false,true,false,false,false],
+
+                    [false,false,false,true,false,false,false,false,true,false,false,false,true,false,true,false,false,true,true,false,false,true,false,false,true,false,false,false,false,true,false,true,false,false,false],
+
+                    [false,false,false,true,false,false,false,false,true,false,false,false,true,false,true,false,false,true,true,false,false,true,false,false,true,false,false,true,false,false,false,false,false,false,false],
+
+                    [false,false,false,true,false,false,false,false,true,false,false,false,true,false,true,false,false,false,true,false,true,true,true,false,false,true,true,true,false,true,false,true,false,false,false]
+                    ]
+                    );
+  }
+  
+}
+procedure f(m: mat) {
+for i in m.shapeC{
+	for n in 8
+	{
+		if i >=m.shapeC-7
+		{
+			printledX("C", n,[false,false,false,false,false,false,false,false]);
+		}
+		if i <m.shapeC-7
+		{
+			printledX("C", n, m[:,i+n]);
+		}
+	  	
+	  	
+  	}
+  	delay(300,"mil");
+  
+  }
+}

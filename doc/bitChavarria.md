@@ -135,15 +135,21 @@ url{https://wiki.gnome.org/Projects/GtkSourceView}
 
 ### 12 de junio
 
-- Documentacion interna del código del editor.
+- Documentación interna del código del editor.
 
 ### 13 de junio
+
+- Reunión de grupo para decidir detalles finales y como evalación de tareas restantes y tiempo disponible.
 
 ### 14 de junio
 
 ### 15 de junio
 
+- Documentación, pruebas en compilación en la matiz con Natalia, implementación de funciones para la matriz en .led
+
 ### 16 de junio
+
+- Documentación, implementación final de los botones de compilación y flasheo, implementación de funciones para la matriz en .led
 
 ### 17 de junio
 
