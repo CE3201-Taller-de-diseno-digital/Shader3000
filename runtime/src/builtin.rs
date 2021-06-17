@@ -24,10 +24,31 @@ use crate::{
 type List = Vec<bool>;
 type Mat = Vec<Rc<Vec<bool>>>;
 
-/// Imprime información de epuración en alguna manera no especificada.
 #[no_mangle]
-pub extern "C" fn builtin_debug(hint: isize) {
-    sys_debug!("builtin_debug(0x{:x})", hint);
+pub extern "C" fn builtin_debug(line: isize) {
+    sys_debug!("[line {}] builtin_debug()", line);
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_debug_bool(line: isize, hint: bool) {
+    sys_debug!("[line {}] builtin_debug_bool({:?})", line, hint);
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_debug_int(line: isize, hint: isize) {
+    sys_debug!("[line {}] builtin_debug_int({})", line, hint);
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_debug_list(line: isize, list: *mut List) {
+    let list = unsafe { &*list };
+    sys_debug!("[line {}] builtin_debug_list({:?})", line, list);
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_debug_mat(line: isize, mat: *mut Mat) {
+    let mat = unsafe { &*mat };
+    sys_debug!("[line {}] builtin_debug_mat({:?})", line, mat);
 }
 
 #[no_mangle]
