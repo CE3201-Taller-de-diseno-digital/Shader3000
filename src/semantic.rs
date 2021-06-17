@@ -271,10 +271,7 @@ impl parse::Ast {
     fn scan_global_scope(&self) -> Semantic<SymbolTable<'_>> {
         let main = self
             .iter()
-            .find(|proc| {
-                let id = proc.name().as_ref();
-                unicase::eq_ascii(id.as_ref(), "main") && proc.parameters().is_empty()
-            })
+            .find(|proc| proc.is_entrypoint())
             .ok_or_else(|| Located::at(SemanticError::NoMain, self.eof().clone()))?;
 
         let mut context = Context {
@@ -338,6 +335,13 @@ impl parse::Ast {
 
         let globals = context.scope;
         Ok(globals)
+    }
+}
+
+impl parse::Procedure {
+    fn is_entrypoint(&self) -> bool {
+        let id = self.name().as_ref();
+        unicase::eq_ascii(id.as_ref(), "main") && self.parameters().is_empty()
     }
 }
 
