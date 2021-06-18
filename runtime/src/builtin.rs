@@ -215,22 +215,108 @@ pub extern "C" fn builtin_slice_list(list: *mut List, from: isize, to: isize) ->
 }
 
 #[no_mangle]
-pub extern "C" fn builtin_slice_mat(mat: *mut List, from: isize, to: isize) -> *mut Mat {
+pub extern "C" fn builtin_slice_mat(mat: *mut Mat, from: isize, to: isize) -> *mut Mat {
     let mat = unsafe { &*mat };
     let slice = (&mat[try_usize(from)..try_usize(to)]).to_vec();
     Rc::into_raw(Rc::new(slice)) as *mut _
 }
 
 #[no_mangle]
+pub extern "C" fn builtin_set_entry_list(list: *mut List, index: isize, entry: bool) {
+    let list = unsafe { &mut *list };
+    list[try_usize(index)] = entry;
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_set_entry_mat(mat: *mut Mat, row: isize, col: isize, entry: bool) {
+    let mat = unsafe { &mut *mat };
+    let row = unsafe { Rc::get_mut_unchecked(&mut mat[try_usize(row)]) };
+    row[try_usize(col)] = entry;
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_set_row_mat(mat: *mut Mat, row: isize, entry: *mut List) {
+    let (mat, entry) = unsafe { (&mut *mat, Rc::from_raw(entry)) };
+
+    let shapec = shapec(mat);
+    assert!(
+        shapec == entry.len(),
+        "attempted to replace row of length {} with list of length {}",
+        shapec,
+        entry.len()
+    );
+
+    mat[try_usize(row)] = Rc::clone(&entry);
+    Rc::into_raw(entry);
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_set_column_mat(mat: *mut Mat, column: isize, entry: *mut List) {
+    let (mat, entry) = unsafe { (&mut *mat, &*entry) };
+
+    let shapef = shapef(mat);
+    assert!(
+        shapef == entry.len(),
+        "attempted to replace column of length {} with list of length {}",
+        shapef,
+        entry.len()
+    );
+
+    let column = try_usize(column);
+    for (row, value) in mat.iter_mut().zip(entry.iter().cloned()) {
+        let row = unsafe { Rc::get_mut_unchecked(row) };
+        row[column] = value;
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_set_slice_list(
+    list: *mut List,
+    from: isize,
+    to: isize,
+    values: *mut List,
+) {
+    let (list, values) = unsafe { (&mut *list, &*values) };
+
+    let target = &mut list[try_usize(from)..try_usize(to)];
+    assert!(target.len() == values.len());
+
+    target
+        .iter_mut()
+        .zip(values.iter().copied())
+        .for_each(|(entry, value)| *entry = value);
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_set_slice_mat(mat: *mut Mat, from: isize, to: isize, rows: *mut Mat) {
+    let (mat, rows) = unsafe { (&mut *mat, &*rows) };
+
+    let (target_shapec, source_shapec) = (shapec(mat), shapec(rows));
+    assert!(
+        source_shapec == target_shapec,
+        "attempted to replace matrix slice of {} columns with matrix of {} columns",
+        target_shapec,
+        source_shapec
+    );
+
+    let target = &mut mat[try_usize(from)..try_usize(to)];
+    assert!(target.len() == rows.len());
+
+    for (target_row, source_row) in target.iter_mut().zip(rows.iter()) {
+        *target_row = source_row.clone();
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn builtin_shapef(mat: *mut Mat) -> isize {
     let mat = unsafe { &*mat };
-    mat.len() as isize
+    shapef(mat) as isize
 }
 
 #[no_mangle]
 pub extern "C" fn builtin_shapec(mat: *mut Mat) -> isize {
     let mat = unsafe { &*mat };
-    mat.first().map(|row| row.len()).unwrap_or(0) as isize
+    shapec(mat) as isize
 }
 
 #[no_mangle]
@@ -442,4 +528,12 @@ fn f32_to_ffi(float: f32) -> isize {
 
 fn bool_to_ffi(boolean: bool) -> isize {
     boolean as isize
+}
+
+fn shapef(mat: &Mat) -> usize {
+    mat.len()
+}
+
+fn shapec(mat: &Mat) -> usize {
+    mat.first().map(|row| row.len()).unwrap_or(0)
 }
