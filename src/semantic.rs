@@ -283,6 +283,10 @@ impl parse::Ast {
                 };
 
                 let symbol = context.scan_procedure(procedure)?;
+                if procedure.is_entrypoint() {
+                    context.drop_globals(&global_scope);
+                }
+
                 Ok(ir::GeneratedFunction {
                     name: symbol,
                     body: context.sink.body,
@@ -1671,6 +1675,29 @@ impl<S: Sink> Context<'_, S> {
         self.sink.free_local(local);
 
         Ok(result)
+    }
+
+    fn drop_globals(&mut self, globals: &SymbolTable<'_>) {
+        for named in globals.symbols.values() {
+            if let Named::Var(Variable {
+                access: Access::Global(global),
+                typ,
+            }) = named
+            {
+                if let Some(destructor) = destructor(*typ, Ownership::Owned) {
+                    // Ya no quedan otras locales
+                    let local = Local::default();
+
+                    self.sink
+                        .push(Instruction::LoadGlobal(global.clone(), local));
+                    self.sink.push(Instruction::Call {
+                        target: Function::External(destructor),
+                        arguments: vec![local],
+                        output: None,
+                    });
+                }
+            }
+        }
     }
 
     fn drop(&mut self, local: Local, typ: Type, ownership: Ownership) {
