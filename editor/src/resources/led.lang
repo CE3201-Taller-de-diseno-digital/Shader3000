@@ -75,7 +75,7 @@ except according to those terms.
       <keyword>in</keyword>
       <keyword>step</keyword>
       <keyword>call</keyword>
-      <keyword>type</keyword>
+      <keyword>global</keyword>
     </context>
 
     <context id="reserved" style-ref="keyword">
@@ -87,6 +87,7 @@ except according to those terms.
       <keyword>int</keyword>
       <keyword>list</keyword>
       <keyword>mat</keyword>
+      <keyword>float</keyword>
     </context>
 
     <context id="self" style-ref="identifier">
@@ -101,6 +102,8 @@ except according to those terms.
       <keyword>printledx</keyword>
       <keyword>shapef</keyword>
       <keyword>shapec</keyword>
+      <keyword>type</keyword>
+      <keyword>debug</keyword>
     </context>
 
     <context id="boolean" style-ref="boolean">

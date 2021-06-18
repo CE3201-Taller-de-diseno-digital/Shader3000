@@ -110,10 +110,14 @@ fn build_ui(application: &gtk::Application) {
     //Set sourceview proprieties
     buffer.set_highlight_syntax(true);
     let sourceview = sourceview::View::new_with_buffer(&buffer);
+    sourceview.set_widget_name("source");
     sourceview.set_auto_indent(true);
     sourceview.set_indent_on_tab(true);
     sourceview.set_show_line_numbers(true);
     sourceview.set_smart_backspace(true);
+
+    let map = sourceview::Map::new();
+    map.set_view(&sourceview);
 
     scroll.add(&sourceview);
 

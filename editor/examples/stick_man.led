@@ -1,0 +1,80 @@
+procedure main(){
+
+
+	call stick_man(30,900);
+
+
+}
+
+## Un hombrecito de palo da cantidad de saltos igual a  "jumps" 
+## a una velocidad de "speed" mili segundos
+procedure stick_man(jumps:int, speed:int){
+
+
+	off_mat =    [ [false,false,false,false,false,false,false,false],
+	
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false] ];
+				 
+				 printledX("M",0,off_mat);
+	
+	
+	down =          [ [false,false,false,true,true,true,false,false],
+	
+				 [false,false,false,true,true,true,false,false],
+				 
+				 [false,false,false,true,true,true,false,false],
+				 
+				 [false,false,false,false,true,false,false,false],
+				 
+				 [false,false,false,true,true,true,false,false],
+				 
+				 [false,false,true,false,true,false,true,false],
+				 
+				 [false,false,false,false,true,false,false,false],
+				 
+				 [false,false,false,true,false,true,false,false] ];
+				 
+				 
+	up =              [ [false,false,false,true,true,true,false,false],
+	
+				 [false,false,false,true,true,true,false,false],
+				 
+				 [false,true,false,true,true,true,false,true],
+				 
+				 [false,false,true,false,true,false,true,false],
+				 
+				 [false,false,false,true,true,true,false,false],
+				 
+				 [false,false,false,false,true,false,false,false],
+				 
+				 [false,false,false,true,false,true,false,false],
+				 
+				 [false,false,true,false,false,false,true,false] ];
+	
+	for i in jumps{
+		
+			printledX("M",0,down);
+			
+			delay(speed,"mil");
+			
+			printledX("M",0,up);
+			
+			delay(speed,"mil");
+			
+			printledX("M",0,off_mat);
+			
+	}
+
+}

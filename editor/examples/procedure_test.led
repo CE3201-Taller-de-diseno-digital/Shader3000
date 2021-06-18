@@ -14,10 +14,13 @@
 ##el código suficiente y necesario para realizar dicha
 ##animación.
 
-
 procedure main(){
 
-	rows ,cols = 8, 8;
+	##global rows;
+	
+	##global cols;
+	
+	rows , cols = 8,8;
 	
 	call dance();
 	
@@ -26,7 +29,7 @@ procedure main(){
 	call stick_man(30,900);
 	
 	call off();
-
+	
 }
 
 procedure dance(){
@@ -178,11 +181,11 @@ procedure stick_man(jumps:int, speed:int){
 		
 			printledX("M",0,down);
 			
-			delay(speed/2,"mil");
+			delay(speed,"mil");
 			
 			printledX("M",0,up);
 			
-			delay(speed/2,"mil");
+			delay(speed,"mil");
 			
 			call off();
 			
@@ -241,7 +244,7 @@ procedure desc_to_m(keep_OFF:bool , top:bool, line_speed: int ,ind_speed:int ){
 ##mitad de la matriz. 
 ## Si top es true --> Enciende del medio a la esquina IZ 
 ##Si top es false --> Enciende del medio a la esquina SD
-procedure desc_frm_m(keep_OFF:bool,top:bool,speed: int){
+procedure desc_frm_m(keep_OFF:bool,top:bool,line_speed: int ,ind_speed:int){
 
 	this_col = 0;
 	
@@ -262,7 +265,7 @@ procedure desc_frm_m(keep_OFF:bool,top:bool,speed: int){
 			
 			printLed(row,col,true);  
 			
-			delay(speed,"mil");
+			delay(ind_speed,"mil");
 				
 			if keep_OFF{
 				
@@ -272,7 +275,9 @@ procedure desc_frm_m(keep_OFF:bool,top:bool,speed: int){
 		
 		}
 		
-	this_col = this_col +1;
+		this_col = this_col +1;
+		
+		delay(line_speed,"mil");
 	
 	}
 	
