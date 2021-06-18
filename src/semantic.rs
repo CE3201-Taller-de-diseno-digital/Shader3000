@@ -977,7 +977,31 @@ impl<S: Sink> Context<'_, S> {
         target: &Located<parse::Target>,
         value: &Located<parse::Expr>,
     ) -> Semantic<()> {
-        self.address(target, |this, base, addressed| todo!())
+        self.address(target, |this, base, addressed| {
+            use Addressed::*;
+            let (builtin, typ, mut args) = match addressed {
+                ListEntry(index) => ("builtin_set_entry_list", Type::Bool, vec![base, index]),
+                MatEntry(row, col) => ("builtin_set_entry_mat", Type::Bool, vec![base, row, col]),
+                MatRow(row) => ("builtin_set_row_mat", Type::List, vec![base, row]),
+                MatColumn(col) => ("builtin_set_column_mat", Type::List, vec![base, col]),
+                ListSlice(from, to) => ("builtin_set_slice_list", Type::List, vec![base, from, to]),
+                MatSlice(from, to) => ("builtin_set_slice_mat", Type::Mat, vec![base, from, to]),
+                List | Mat | Pod(_) => unreachable!(),
+            };
+
+            this.ephemeral(move |this, value_local| {
+                let ownership = this.eval_expecting(value, value_local, typ)?;
+                args.push(value_local);
+
+                this.sink.push(Instruction::Call {
+                    target: Function::External(builtin),
+                    arguments: args,
+                    output: None,
+                });
+
+                Ok((typ, ownership, (false, ())))
+            })
+        })
     }
 
     fn address<F, R>(&mut self, target: &Located<parse::Target>, callback: F) -> Semantic<R>
