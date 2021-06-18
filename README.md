@@ -49,7 +49,53 @@ nocite: |
 ## 1.3 Gramática implementada
 
 ```BNF
-
+<az> -> a | b | c | ... | x | y | z
+<AZ> -> A | B | C | ... | X | Y | Z
+<number> -> 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+<Symbol> -> ? | _ | @
+<String> -> <az><String> | <AZ><String> | <Symbol><String>
+	| <number><String> | epsilon 
+<Identifier> -> <az><String> 
+<Type> -> Int | Bool | List | Mat | Type(<Expr>)
+<TimeUnit> -> "mil" | "seg" | "min"
+<ObjectKind> -> "c" | "f" | "m"
+<BinOp> -> + | - | * | ** | / | % | // | == | <> | < | <= | > | >=
+<Index> -> [<Expr>] | [<Expr>, <Expr>] | [<Expr>:<Expr>] | [:, <Expr>]   
+<Indices> -> <Index> | <Index><Indices> | epsilon 
+<Target> -> <Identifier><Indices>
+<Targets> -> <Identifier><Indices> | <Identifier><Indices>,<Targets>
+<Parameter> -> <Identifier>:<Type>
+<Parameters> -> <Paramenter>,<Parameters> | <Parameter>
+<Integer> -> <number> | <number><Integer>
+<Read> -> <Identifier><Indices>
+<Attr> ->  <Expr>.<Identifier>
+<Len> -> Len(<Expr>)
+<Range> -> Range(<Expr>,<Expr>)
+<List> -> [<Values>] | []
+<Negate> -> -<Expr>
+<Binary> -> (<Expr> <BinOp> <Expr>) | <Expr> <BinOP> <Expr>
+<Expr> -> True | False | <Integer> | <Read> | <Attr> | <Len> | <Range>
+	| <List> | <Negate> | <Binary> 
+<Values> -> <Expr> | <Expr>,<Values> 
+<Arguments> -> <Expr> | <Expr>,<Arguments>
+<If> -> if <Expr> { <Statements> }
+<For> -> for <Identifier> in <Expr> { <Statements> }
+<UserCall> -> call <Identifier>(<Arguments>); | call <Identifier>();
+<GlobalLift> -> global <Identifier>;
+<Assignment> -> <Targets> = <Values>;
+<MethodCall> -> <Target>.<Identifier>(<Arguments>);
+	| <Target>.<Identifier>(); | <Target>.<Identifier>;
+<Blink> -> Blink(<Expr>,<Expr>,<Expr>,<TimeUnit>,<Expr>);
+<Delay> -> Delay(<Expr>,<TimeUnit>);
+<PrintLed> -> PrintLed(<Expr>,<Expr>,<Expr>);
+<PrintLedX> -> PrintLedX(<ObjectKind>,<Expr>,<Expr>);
+<Statement> -> <If> | <For> | <UserCall> | <GlobalLift> | <Assignment>
+	| <MethodCall> | <Blink> | <Delay> | <PrintLed> | <PrintLedX>
+<Statements> -> <Statement><Statements> | <Statement> | epsilon
+<Procedure> -> procedure <Identifier>(<Parameters>){<statements>}
+	| procedure <Identifier>(){<statements>} 
+<Procedures> -> <Procedure><Procedures> | <Procedure> | epsilon
+<Program> -> <Procedures>
 ```
 
 # 2. Alternativas de solución consideradas y justificación de la seleccionada
@@ -448,7 +494,7 @@ Al implementar las funciones de respuesta para los distintos botones del IDE fue
 ### Intentos de solución
 
 1.  Se intentó utilizar punteros tipo RC sin ningún éxito, pues no pueden ser mutables.
-2.  Se buscaron ejemplos en el git de gtk para rust[gtk-rs] donde esto sucediera, pero no se encontró ninguno. 
+2.  Se buscaron ejemplos en el git de gtk para rust[@gtk-rs] donde esto sucediera, pero no se encontró ninguno. 
 
 ### Solución encontrada
 
@@ -466,7 +512,7 @@ Para preservar la propiedad de las variables antes de llamar una de estas funcio
   
 ### Bibliografía
 
-Para solucionar este problema fue necesario recurrir a [gtk-rs] y [rustbook].
+Para solucionar este problema fue necesario recurrir a [@gtk-rs] y [@rustbook].
  
 ## 5.5. Guardar el nombre del archivo actual durante tiempo de ejecución
 
@@ -493,9 +539,8 @@ Se observa que las variables comunes no se pueden usar asincrónicamente como la
   
 ### Bibliografía
 
-Para solucionar este problema fue necesario recurrir a [gtk-doc].
+Para solucionar este problema fue necesario recurrir a [@gtk-doc].
  
-
 ## 5.6. Implementación de syntax highlights en GTKsourceview
 
 ### Descripción
@@ -520,7 +565,7 @@ Sourceview, sin embargo, si tiene una manera integrada de hacer syntax highlight
   
 ### Bibliografía
 
-Para solucionar este problema fue necesario recurrir a [sourceview-doc] y [gtk-sourceview].
+Para solucionar este problema fue necesario recurrir a [@sourceview-doc] y [@gtk-sourceview].
 
 
 # 6. Conclusiones y Recomendaciones del Proyecto

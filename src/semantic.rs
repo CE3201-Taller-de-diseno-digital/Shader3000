@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::{self, Display},
     rc::Rc,
 };
@@ -13,15 +13,42 @@ use crate::{
     source::{Located, Location},
 };
 
+#[derive(Default)]
 struct SymbolTable<'a> {
     outer: Option<&'a SymbolTable<'a>>,
     symbols: HashMap<Identifier, Named>,
+    lifted: HashSet<Identifier>,
 }
 
 impl SymbolTable<'_> {
-    fn lookup(&self, id: &Located<Identifier>) -> Semantic<&Named> {
+    fn is_lifted(&self, id: &Identifier) -> bool {
         let mut table = self;
-        let named = loop {
+
+        loop {
+            if table.lifted.contains(id) {
+                break true;
+            }
+
+            match table.outer {
+                None => break false,
+                Some(outer) => table = outer,
+            }
+        }
+    }
+
+    fn lookup(&self, id: &Located<Identifier>) -> Semantic<&Named> {
+        self.try_lookup(id).ok_or_else(|| {
+            Located::at(
+                SemanticError::Undefined(id.as_ref().clone()),
+                id.location().clone(),
+            )
+        })
+    }
+
+    fn try_lookup(&self, id: &Located<Identifier>) -> Option<&Named> {
+        let mut table = self;
+
+        loop {
             match table.symbols.get(id) {
                 Some(id) => break Some(id),
 
@@ -30,14 +57,7 @@ impl SymbolTable<'_> {
                     None => break None,
                 },
             }
-        };
-
-        named.ok_or_else(|| {
-            Located::at(
-                SemanticError::Undefined(id.as_ref().clone()),
-                id.location().clone(),
-            )
-        })
+        }
     }
 }
 
@@ -66,6 +86,7 @@ pub enum Type {
     Bool,
     List,
     Mat,
+    Float,
 }
 
 impl Display for Type {
@@ -75,6 +96,7 @@ impl Display for Type {
             Type::Bool => "bool",
             Type::List => "list",
             Type::Mat => "mat",
+            Type::Float => "float",
         };
 
         fmt.write_str(string)
@@ -85,6 +107,18 @@ impl Display for Type {
 enum Ownership {
     Owned,
     Borrowed,
+}
+
+#[derive(Copy, Clone)]
+enum AssignmentMode {
+    /// Asignación en main() que no inicializa una global
+    Main,
+
+    /// Asignación en main() que inicializa una global
+    GlobalInit,
+
+    /// Ninguna de las otras opciones es correcta
+    Normal,
 }
 
 trait Sink: Default {
@@ -222,8 +256,8 @@ pub enum SemanticError {
     #[error("Objects of type `{0}` have no attribute `{1}`")]
     NoSuchAttr(Type, Identifier),
 
-    #[error("Floats are not supported by this implementation")]
-    Floats,
+    #[error("This global statement is in conflict with another symbol")]
+    GlobalLiftConflict,
 }
 
 impl parse::Ast {
@@ -237,10 +271,12 @@ impl parse::Ast {
                 let mut context = Context {
                     scope: SymbolTable {
                         outer: Some(&global_scope),
-                        symbols: Default::default(),
+                        ..Default::default()
                     },
 
                     sink: Listing::for_parameters(parameters),
+                    procedure: Some(procedure),
+                    is_toplevel: Default::default(),
                 };
 
                 let symbol = context.scan_procedure(procedure)?;
@@ -277,10 +313,12 @@ impl parse::Ast {
         let mut context = Context {
             scope: SymbolTable {
                 outer: None,
-                symbols: Default::default(),
+                ..Default::default()
             },
 
             sink: TypeCheck,
+            procedure: None,
+            is_toplevel: Default::default(),
         };
 
         let mut statements = main.statements().iter();
@@ -348,6 +386,8 @@ impl parse::Procedure {
 struct Context<'a, S: Sink> {
     scope: SymbolTable<'a>,
     sink: S,
+    procedure: Option<&'a parse::Procedure>,
+    is_toplevel: bool,
 }
 
 impl<S: Sink> Context<'_, S> {
@@ -355,6 +395,8 @@ impl<S: Sink> Context<'_, S> {
         let types = self.parameter_types(procedure)?;
 
         self.subscope(|this| {
+            this.is_toplevel = true;
+
             let parameters = procedure.parameters().iter();
             for (i, (parameter, typ)) in parameters.zip(types.iter().copied()).enumerate() {
                 let name = parameter.name();
@@ -382,8 +424,28 @@ impl<S: Sink> Context<'_, S> {
     }
 
     fn scan_statements(&mut self, statements: &[parse::Statement]) -> Semantic<()> {
+        let is_entrypoint = self
+            .procedure
+            .map(|proc| proc.is_entrypoint())
+            .unwrap_or(false);
+
+        let mut initialized_globals = HashSet::new();
+        let mut assignment_mode = match (is_entrypoint, self.is_toplevel) {
+            (true, true) => AssignmentMode::GlobalInit,
+            (true, false) => AssignmentMode::Main,
+            _ => AssignmentMode::Normal,
+        };
+
         for statement in statements.iter() {
             use parse::{ObjectKind::*, Statement::*, TimeUnit::*};
+            use AssignmentMode::*;
+
+            assignment_mode = match (assignment_mode, statement) {
+                (GlobalInit, Assignment { .. }) => GlobalInit,
+                (GlobalInit, _) => Main,
+
+                _ => assignment_mode,
+            };
 
             match statement {
                 If { condition, body } => self.scan_conditional(condition, body)?,
@@ -398,6 +460,7 @@ impl<S: Sink> Context<'_, S> {
                 }
 
                 UserCall { procedure, args } => self.scan_user_call(procedure, args)?,
+                Debug { location, hint } => self.scan_debug(location, hint.as_ref())?,
 
                 Blink {
                     column,
@@ -458,6 +521,28 @@ impl<S: Sink> Context<'_, S> {
                     self.eval_fixed_call(builtin, location, &args, &types, None)?;
                 }
 
+                GlobalLift(id) => self.global_lift(id)?,
+
+                Assignment { targets, values } => {
+                    for (target, value) in break_assignment(targets, values)? {
+                        let var = target.var().as_ref().as_ref();
+                        let (global_init, mode) = match assignment_mode {
+                            GlobalInit if initialized_globals.get(var).is_none() => {
+                                (true, GlobalInit)
+                            }
+
+                            GlobalInit => (false, Main),
+                            _ => (false, assignment_mode),
+                        };
+
+                        self.assign(mode, target, value)?;
+
+                        if global_init {
+                            initialized_globals.insert(var.clone());
+                        }
+                    }
+                }
+
                 _ => todo!(),
             }
         }
@@ -479,7 +564,7 @@ impl<S: Sink> Context<'_, S> {
             Ok((Type::Bool, Ownership::Owned, ()))
         })?;
 
-        self.scan_statements(body)?;
+        self.subscope(|this| this.scan_statements(body))?;
         self.sink.push(Instruction::SetLabel(if_false));
 
         Ok(())
@@ -554,6 +639,46 @@ impl<S: Sink> Context<'_, S> {
         Ok(())
     }
 
+    fn scan_debug(
+        &mut self,
+        location: &Location,
+        hint: Option<&Located<parse::Expr>>,
+    ) -> Semantic<()> {
+        let line = location.start().line() as i32;
+        self.ephemeral(|this, line_local| {
+            this.sink.push(Instruction::LoadConst(line, line_local));
+
+            match hint {
+                None => this.sink.push(Instruction::Call {
+                    target: Function::External("builtin_debug"),
+                    arguments: vec![line_local],
+                    output: None,
+                }),
+
+                Some(hint) => this.ephemeral(|this, hint_local| {
+                    let (typ, ownership) = this.eval(hint, hint_local)?;
+                    let builtin = match typ {
+                        Type::Bool => "builtin_debug_bool",
+                        Type::Int => "builtin_debug_int",
+                        Type::List => "builtin_debug_list",
+                        Type::Mat => "builtin_debug_mat",
+                        Type::Float => "builtin_debug_float",
+                    };
+
+                    this.sink.push(Instruction::Call {
+                        target: Function::External(builtin),
+                        arguments: vec![line_local, hint_local],
+                        output: None,
+                    });
+
+                    Ok((typ, ownership, ()))
+                })?,
+            }
+
+            Ok((Type::Int, Ownership::Owned, ()))
+        })
+    }
+
     fn scan_user_call(
         &mut self,
         target: &Located<Identifier>,
@@ -602,6 +727,128 @@ impl<S: Sink> Context<'_, S> {
         Ok(())
     }
 
+    fn global_lift(&mut self, id: &Located<Identifier>) -> Semantic<()> {
+        match self.scope.lookup(id)? {
+            Named::Var(Variable {
+                access: Access::Global(_),
+                ..
+            }) => {
+                self.scope.lifted.insert(id.as_ref().clone());
+                Ok(())
+            }
+
+            _ => Err(Located::at(
+                SemanticError::GlobalLiftConflict,
+                id.location().clone(),
+            )),
+        }
+    }
+
+    fn assign(
+        &mut self,
+        mode: AssignmentMode,
+        target: &Located<parse::Target>,
+        value: &Located<parse::Expr>,
+    ) -> Semantic<()> {
+        use AssignmentMode::*;
+
+        if !target.indices().is_empty() {
+            todo!();
+        }
+
+        let value_type = self.type_check(value)?;
+        let target = target.var();
+
+        let should_override = |var: &Variable, scope: &SymbolTable<'_>| {
+            matches!(&var.access, Access::Global(_)) && !scope.is_lifted(target.as_ref())
+        };
+
+        let var = match (mode, self.scope.try_lookup(target)) {
+            (
+                GlobalInit,
+                Some(Named::Var(Variable {
+                    access: Access::Global(global),
+                    ..
+                })),
+            ) => {
+                let global = global.clone();
+
+                return self.ephemeral(|this, local| {
+                    this.eval_owned(value, local)?;
+                    this.sink.push(Instruction::StoreGlobal(local, global));
+
+                    // Esto evita un drop de la local
+                    Ok((Type::Int, Ownership::Owned, ()))
+                });
+            }
+
+            (Main, Some(Named::Var(var))) => var,
+            (_, Some(Named::Var(var))) if !should_override(var, &self.scope) => var,
+
+            _ => {
+                let local = self.sink.alloc_local();
+                self.eval_owned(value, local)?;
+
+                let named = Named::Var(Variable {
+                    access: Access::Local(local),
+                    typ: value_type,
+                });
+
+                self.scope.symbols.insert(target.as_ref().clone(), named);
+                return Ok(());
+            }
+        };
+
+        if var.typ != value_type {
+            return Err(Located::at(
+                SemanticError::ExpectedType(var.typ, value_type),
+                value.location().clone(),
+            ));
+        }
+
+        let must_drop = destructor(var.typ, Ownership::Owned).is_some();
+        match (&var.access, must_drop) {
+            (Access::Local(local), false) => {
+                let local = *local;
+                self.eval(value, local)?;
+            }
+
+            (Access::Local(local), true) => {
+                let local = *local;
+
+                self.ephemeral(|this, value_local| {
+                    this.eval(value, value_local)?;
+                    this.drop(local, value_type, Ownership::Owned);
+                    this.sink.push(Instruction::Move(value_local, local));
+
+                    // Se evita otro drop
+                    Ok((Type::Int, Ownership::Owned, ()))
+                })?;
+            }
+
+            (Access::Global(global), drop) => {
+                let global = global.clone();
+                self.ephemeral(|this, value_local| {
+                    this.eval(value, value_local)?;
+                    if drop {
+                        let global = global.clone();
+
+                        this.ephemeral(|this, old_local| {
+                            this.sink.push(Instruction::LoadGlobal(global, old_local));
+                            Ok((value_type, Ownership::Owned, ()))
+                        })?;
+                    }
+
+                    this.sink
+                        .push(Instruction::StoreGlobal(value_local, global));
+                    Ok((Type::Int, Ownership::Owned, ()))
+                })?;
+            }
+        }
+
+        Ok(())
+    }
+
     fn parameter_types(&mut self, procedure: &parse::Procedure) -> Semantic<Vec<Type>> {
         procedure
             .parameters()
@@ -611,6 +858,7 @@ impl<S: Sink> Context<'_, S> {
                 parse::Type::Bool => Ok(Type::Bool),
                 parse::Type::List => Ok(Type::List),
                 parse::Type::Mat => Ok(Type::Mat),
+                parse::Type::Float => Ok(Type::Float),
                 parse::Type::Of(expr) => self.type_check(expr),
             })
             .collect()
@@ -620,10 +868,12 @@ impl<S: Sink> Context<'_, S> {
         let mut context = Context {
             scope: SymbolTable {
                 outer: Some(&self.scope),
-                symbols: Default::default(),
+                ..Default::default()
             },
 
             sink: TypeCheck,
+            procedure: None,
+            is_toplevel: Default::default(),
         };
 
         let (typ, _) = context.eval(expr, Local::default())?;
@@ -681,8 +931,7 @@ impl<S: Sink> Context<'_, S> {
         let (typ, ownership) = self.eval(expr, into)?;
         let cloner = match (typ, ownership) {
             (_, Owned) => None,
-            (Type::Int, _) => None,
-            (Type::Bool, _) => None,
+            (Type::Int | Type::Bool | Type::Float, _) => None,
             (Type::List, Borrowed) => Some("builtin_ref_list"),
             (Type::Mat, Borrowed) => Some("builtin_ref_mat"),
         };
@@ -765,6 +1014,9 @@ impl<S: Sink> Context<'_, S> {
                 Ok((Type::List, Owned))
             }
 
+            New(_) => todo!(),
+            Cast(_, _) => todo!(),
+
             List(items) => {
                 let typ = self.eval_sequence(&items, into)?;
                 Ok((typ, Owned))
@@ -810,11 +1062,26 @@ impl<S: Sink> Context<'_, S> {
             use Type::*;
 
             let op = match (op, typ) {
+                (_, Float) => {
+                    let typ = this.do_float_binary(at, into, op, rhs_local)?;
+                    return Ok((Type::Float, Ownership::Owned, typ));
+                }
+
                 (ParseOp::Add, Int) => IrOp::Arithmetic(ArithmeticOp::Add),
                 (ParseOp::Sub, Int) => IrOp::Arithmetic(ArithmeticOp::Sub),
                 (ParseOp::Mul, Int) => IrOp::Arithmetic(ArithmeticOp::Mul),
                 (ParseOp::Mod, Int) => IrOp::Arithmetic(ArithmeticOp::Mod),
                 (ParseOp::IntegerDiv, Int) => IrOp::Arithmetic(ArithmeticOp::Div),
+
+                (ParseOp::Div, Int) => {
+                    this.do_builtin_assign(into, "builtin_div_int", rhs_local);
+                    return Ok((Type::Int, Ownership::Owned, Type::Float));
+                }
+
+                (ParseOp::Pow, Int) => {
+                    this.do_builtin_assign(into, "builtin_pow_int", rhs_local);
+                    return Ok((Type::Int, Ownership::Owned, Type::Float));
+                }
 
                 (ParseOp::Equal, Int | Bool) => IrOp::Logic(LogicOp::Equal),
                 (ParseOp::NotEqual, Int | Bool) => IrOp::Logic(LogicOp::NotEqual),
@@ -825,9 +1092,9 @@ impl<S: Sink> Context<'_, S> {
 
                 (ParseOp::Equal | ParseOp::NotEqual, List | Mat) => {
                     let comparator = if typ == List {
-                        "builtin_cmp_list"
+                        "builtin_eq_list"
                     } else {
-                        "builtin_cmp_mat"
+                        "builtin_eq_mat"
                     };
 
                     this.ephemeral(|this, lhs_local| {
@@ -848,8 +1115,6 @@ impl<S: Sink> Context<'_, S> {
                     return Ok((typ, rhs_ownership, Bool));
                 }
 
-                (ParseOp::Div, Int) => return Err(Located::at(SemanticError::Floats, at.clone())),
-
                 _ => {
                     return Err(Located::at(
                         SemanticError::InvalidOperands(op, typ, typ),
@@ -866,6 +1131,72 @@ impl<S: Sink> Context<'_, S> {
             this.sink.push(Instruction::Binary(into, op, rhs_local));
             Ok((typ, rhs_ownership, result_type))
         })
+    }
+
+    fn do_float_binary(
+        &mut self,
+        location: &Location,
+        lhs: Local,
+        op: parse::BinOp,
+        rhs: Local,
+    ) -> Semantic<Type> {
+        enum FloatEval {
+            Arithmetic(&'static str),
+            Logic(ir::LogicOp),
+        }
+
+        use parse::BinOp::*;
+        use FloatEval::*;
+
+        let float_eval = match op {
+            Add => Arithmetic("builtin_add_float"),
+            Sub => Arithmetic("builtin_sub_float"),
+            Mul => Arithmetic("builtin_mul_float"),
+            Div => Arithmetic("builtin_div_float"),
+            Pow => Arithmetic("builtin_pow_float"),
+            Equal => Logic(ir::LogicOp::Equal),
+            NotEqual => Logic(ir::LogicOp::NotEqual),
+            Less => Logic(ir::LogicOp::Less),
+            LessOrEqual => Logic(ir::LogicOp::LessOrEqual),
+            Greater => Logic(ir::LogicOp::Greater),
+            GreaterOrEqual => Logic(ir::LogicOp::GreaterOrEqual),
+
+            _ => {
+                return Err(Located::at(
+                    SemanticError::InvalidOperands(op, Type::Float, Type::Float),
+                    location.clone(),
+                ))
+            }
+        };
+
+        match float_eval {
+            Arithmetic(builtin) => {
+                self.do_builtin_assign(lhs, builtin, rhs);
+                Ok(Type::Float)
+            }
+
+            Logic(op) => self.ephemeral(|this, zero| {
+                this.sink.push(Instruction::Call {
+                    target: Function::External("builtin_cmp_float"),
+                    arguments: vec![lhs, rhs],
+                    output: Some(lhs),
+                });
+
+                this.sink.push(Instruction::LoadConst(0, zero));
+                this.sink
+                    .push(Instruction::Binary(lhs, ir::BinOp::Logic(op), zero));
+
+                Ok((Type::Int, Ownership::Owned, Type::Bool))
+            }),
+        }
+    }
+
+    fn do_builtin_assign(&mut self, lhs: Local, builtin: &'static str, rhs: Local) {
+        self.sink.push(Instruction::Call {
+            target: Function::External(builtin),
+            arguments: vec![lhs, rhs],
+            output: Some(lhs),
+        });
     }
 
     fn eval_len(&mut self, expr: &Located<parse::Expr>, into: Local) -> Semantic<()> {
@@ -1130,10 +1461,12 @@ impl<S: Sink> Context<'_, S> {
         let mut subcontext = Context {
             scope: SymbolTable {
                 outer: Some(&self.scope),
-                symbols: Default::default(),
+                ..Default::default()
             },
 
             sink,
+            procedure: self.procedure,
+            is_toplevel: false,
         };
 
         let result = callback(&mut subcontext);
@@ -1188,8 +1521,7 @@ fn break_assignment<'a>(
 fn destructor(typ: Type, ownership: Ownership) -> Option<&'static str> {
     match (typ, ownership) {
         (_, Ownership::Borrowed) => None,
-        (Type::Int, _) => None,
-        (Type::Bool, _) => None,
+        (Type::Int | Type::Bool | Type::Float, _) => None,
         (Type::List, Ownership::Owned) => Some("builtin_drop_list"),
         (Type::Mat, Ownership::Owned) => Some("builtin_drop_mat"),
     }
@@ -1216,6 +1548,7 @@ fn mangle(name: &Identifier, types: &[Type]) -> String {
             Type::Mat => 'm',
             Type::Bool => 'b',
             Type::List => 'l',
+            Type::Float => 'f',
         }));
     }
 

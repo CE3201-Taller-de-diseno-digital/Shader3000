@@ -180,9 +180,9 @@ impl Platform {
                 name: "native",
                 command: "gcc",
 
-                // rustc usa libpthread para hilos y libdl para enlazado
-                // lazy en tiempo de ejecución.
-                extra_args: &["-pthread", "-ldl"],
+                // rustc usa libpthread para hilos, libdl para enlazado
+                // lazy en tiempo de ejecución y libm para floats
+                extra_args: &["-pthread", "-ldl", "-lm"],
             },
 
             Platform::Esp8266 => Parameters {

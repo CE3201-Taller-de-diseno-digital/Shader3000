@@ -69,7 +69,8 @@ pub enum Type {
     Bool,
     List,
     Mat,
-    Of(Located<Expr>),
+    Float,
+    Of(Box<Located<Expr>>),
 }
 
 #[derive(Debug)]
@@ -91,6 +92,8 @@ pub enum Statement {
         args: Vec<Located<Expr>>,
     },
 
+    GlobalLift(Located<Identifier>),
+
     Assignment {
         targets: Vec<Located<Target>>,
         values: Vec<Located<Expr>>,
@@ -100,6 +103,11 @@ pub enum Statement {
         target: Located<Target>,
         method: Located<Identifier>,
         args: Vec<Located<Expr>>,
+    },
+
+    Debug {
+        location: Location,
+        hint: Option<Located<Expr>>,
     },
 
     Blink {
@@ -153,6 +161,8 @@ pub enum Expr {
     Len(Box<Located<Expr>>),
     Range(Box<Located<Expr>>, Box<Located<Expr>>),
     List(Vec<Located<Expr>>),
+    New(Located<Type>),
+    Cast(Located<Type>, Box<Located<Expr>>),
     Negate(Box<Located<Expr>>),
     Binary {
         limits: ExprLimits,
@@ -470,6 +480,8 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
             Token::Keyword(Keyword::If) => self.if_statement(),
             Token::Keyword(Keyword::For) => self.for_statement(),
             Token::Keyword(Keyword::Call) => self.user_call(),
+            Token::Keyword(Keyword::Global) => self.global_lift(),
+            Token::Keyword(Keyword::Debug) => self.debug(),
             Token::Keyword(Keyword::Blink) => self.blink(),
             Token::Keyword(Keyword::Delay) => self.delay(),
             Token::Keyword(Keyword::PrintLed) => self.print_led(),
@@ -532,6 +544,27 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
         self.expect(Token::Semicolon)?;
 
         Ok(Statement::UserCall { procedure, args })
+    }
+
+    fn global_lift(&mut self) -> Parse<Statement> {
+        self.keyword(Keyword::Global)?;
+        let id = self.id()?;
+        self.expect(Token::Semicolon)?;
+
+        Ok(Statement::GlobalLift(id))
+    }
+
+    fn debug(&mut self) -> Parse<Statement> {
+        self.keyword(Keyword::Debug)?;
+        let location = self.last_known.clone();
+
+        self.expect(Token::OpenParen)?;
+        let hint = self.optional(Self::expr)?;
+
+        self.expect(Token::CloseParen)?;
+        self.expect(Token::Semicolon)?;
+
+        Ok(Statement::Debug { location, hint })
     }
 
     fn blink(&mut self) -> Parse<Statement> {
@@ -744,6 +777,23 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
         Ok(Located::at(index, Location::span(start, end)))
     }
 
+    fn new_or_cast(&mut self) -> Parse<Located<Expr>> {
+        let typ = self.typ()?;
+        self.expect(Token::OpenParen)?;
+
+        let inner = self.optional(Self::expr)?;
+
+        self.expect(Token::CloseParen)?;
+        let location = Location::span(typ.location().clone(), &self.last_known);
+
+        let expr = match inner {
+            None => Expr::New(typ),
+            Some(inner) => Expr::Cast(typ, Box::new(inner)),
+        };
+
+        Ok(Located::at(expr, location))
+    }
+
     fn typ(&mut self) -> Parse<Located<Type>> {
         let (location, token) = self.next()?.split();
         let typ = match token {
@@ -751,12 +801,14 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
             Token::Keyword(Keyword::Bool) => Type::Bool,
             Token::Keyword(Keyword::List) => Type::List,
             Token::Keyword(Keyword::Mat) => Type::Mat,
+            Token::Keyword(Keyword::Float) => Type::Float,
+
             Token::Keyword(Keyword::Type) => {
                 self.expect(Token::OpenParen)?;
                 let expr = self.expr().strict()?;
                 self.expect(Token::CloseParen)?;
 
-                Type::Of(expr)
+                Type::Of(Box::new(expr))
             }
 
             _ => self.fail(ParserError::ExpectedType)?,
@@ -778,13 +830,22 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
     fn delimited_expr(&mut self) -> Parse<Located<Expr>> {
         let terminal = |s: &mut _, expr| {
             let (location, _) = Self::next(s)?.split();
-            Ok((expr, location))
+            Ok((location, expr))
         };
 
-        let (mut expr, mut location) = match self.lookahead(Self::next)?.into_inner() {
+        let (mut location, mut expr) = match self.lookahead(Self::next)?.into_inner() {
             Token::Keyword(Keyword::True) => terminal(self, Expr::True)?,
             Token::Keyword(Keyword::False) => terminal(self, Expr::False)?,
             Token::IntLiteral(integer) => terminal(self, Expr::Integer(integer))?,
+
+            Token::Keyword(
+                Keyword::Int
+                | Keyword::Bool
+                | Keyword::List
+                | Keyword::Mat
+                | Keyword::Float
+                | Keyword::Type,
+            ) => self.new_or_cast()?.split(),
 
             Token::Keyword(Keyword::Len) => {
                 let (start, _) = self.next()?.split();
@@ -796,7 +857,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
                 let call = Expr::Len(Box::new(inner));
                 let location = Location::span(start, &self.last_known);
 
-                (call, location)
+                (location, call)
             }
 
             Token::Keyword(Keyword::Range) => {
@@ -812,7 +873,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
                 let call = Expr::Range(Box::new(first), Box::new(second));
                 let location = Location::span(start, &self.last_known);
 
-                (call, location)
+                (location, call)
             }
 
             Token::Minus => {
@@ -820,7 +881,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
                 let inner = self.delimited_expr().strict()?;
                 let location = Location::span(start, inner.location());
 
-                (Expr::Negate(Box::new(inner)), location)
+                (location, Expr::Negate(Box::new(inner)))
             }
 
             Token::OpenParen => {
@@ -837,7 +898,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
                 };
 
                 self.expect(Token::CloseParen)?;
-                (expr, Location::span(start, &self.last_known))
+                (Location::span(start, &self.last_known), expr)
             }
 
             Token::OpenSquare => {
@@ -845,14 +906,14 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
                 let items = self.comma_separated(Self::expr, true)?;
 
                 self.expect(Token::CloseSquare)?;
-                (Expr::List(items), Location::span(start, &self.last_known))
+                (Location::span(start, &self.last_known), Expr::List(items))
             }
 
             Token::Id(_) => {
                 let id = self.id()?;
                 let location = id.location().clone();
 
-                (Expr::Read(id), location)
+                (location, Expr::Read(id))
             }
 
             _ => {

@@ -14,8 +14,11 @@ authors = ["Alejandro Soto <alejandro@34project.org>",
            "josfemova <josfemova@gmail.com>",
            "Jose Alejandro Chavarria <joalchama@gmail.com>"]
 
-[profile.release]
+[profile.release-embedded]
+inherits = "release"
 panic = "abort"
+opt-level = "z"
+codegen-units = 1
 
 [dependencies]
 anyhow = "1.0.40"

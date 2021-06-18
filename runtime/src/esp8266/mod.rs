@@ -229,9 +229,8 @@ where
 }
 
 #[interrupt]
-#[ram]
 fn timer1() {
-    hw(Hw::tick);
+    maybe_hw(Hw::tick);
 }
 
 /// Algo salió mal.
@@ -255,4 +254,11 @@ where
     F: FnOnce(&mut Hw) -> R,
 {
     (&HW).lock(|hw| callback(hw.as_mut().unwrap()))
+}
+
+fn maybe_hw<F, R>(callback: F) -> Option<R>
+where
+    F: FnOnce(&mut Hw) -> R,
+{
+    (&HW).lock(|hw| hw.as_mut().map(callback))
 }
