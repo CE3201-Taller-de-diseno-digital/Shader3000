@@ -37,13 +37,11 @@ fn hosted_main() -> ExitCode {
         return ExitCode::FAILURE;
     };
 
-    let profile = env::var("PROFILE").unwrap();
-
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap())
         .canonicalize()
         .unwrap();
-    let object_file = out_path.join("entry.o");
 
+    let object_file = out_path.join("entry.o");
     let status = Command::new(env::var("RUSTC").unwrap())
         .args(&[
             "-O",
@@ -107,7 +105,7 @@ fn hosted_main() -> ExitCode {
             "--target-dir",
             "../xtarget",
             "--profile",
-            &profile,
+            "release-embedded",
             "--package",
             "runtime",
         ])

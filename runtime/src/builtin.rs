@@ -15,6 +15,9 @@
 use alloc::{rc::Rc, vec::Vec};
 use core::{convert::TryInto, iter, ops::Deref};
 
+#[cfg(target_arch = "xtensa")]
+use micromath::F32Ext;
+
 use crate::{
     chrono::{Duration, Ticks},
     matrix::State,
@@ -37,6 +40,15 @@ pub extern "C" fn builtin_debug_bool(line: isize, hint: bool) {
 #[no_mangle]
 pub extern "C" fn builtin_debug_int(line: isize, hint: isize) {
     sys_debug!("[line {}] builtin_debug_int({})", line, hint);
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_debug_float(line: isize, hint: isize) {
+    sys_debug!(
+        "[line {}] builtin_debug_float({})",
+        line,
+        f32_from_ffi(hint)
+    );
 }
 
 #[no_mangle]
@@ -95,13 +107,13 @@ pub extern "C" fn builtin_drop_mat(mat: *mut Mat) {
 }
 
 #[no_mangle]
-pub extern "C" fn builtin_cmp_list(first: *mut List, second: *mut List) -> bool {
+pub extern "C" fn builtin_eq_list(first: *mut List, second: *mut List) -> bool {
     let (first, second) = unsafe { (&*first, &*second) };
     first == second
 }
 
 #[no_mangle]
-pub extern "C" fn builtin_cmp_mat(first: *mut Mat, second: *mut Mat) -> bool {
+pub extern "C" fn builtin_eq_mat(first: *mut Mat, second: *mut Mat) -> bool {
     let (first, second) = unsafe { (&*first, &*second) };
     first == second
 }
@@ -225,6 +237,56 @@ pub extern "C" fn builtin_shapec(mat: *mut Mat) -> isize {
 pub extern "C" fn builtin_range(length: isize, value: bool) -> *mut List {
     let list = (0..length).map(|_| value).collect::<List>();
     Rc::into_raw(Rc::new(list)) as *mut _
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_div_int(a: isize, b: isize) -> isize {
+    f32_to_ffi((a as f32) / (b as f32))
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_pow_int(a: isize, b: isize) -> isize {
+    f32_to_ffi((a as f32).powf(b as f32))
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_add_float(a: isize, b: isize) -> isize {
+    f32_to_ffi(f32_from_ffi(a) + f32_from_ffi(b))
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_sub_float(a: isize, b: isize) -> isize {
+    f32_to_ffi(f32_from_ffi(a) - f32_from_ffi(b))
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_mul_float(a: isize, b: isize) -> isize {
+    f32_to_ffi(f32_from_ffi(a) * f32_from_ffi(b))
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_div_float(a: isize, b: isize) -> isize {
+    f32_to_ffi(f32_from_ffi(a) / f32_from_ffi(b))
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_pow_float(a: isize, b: isize) -> isize {
+    f32_to_ffi(f32_from_ffi(a).powf(f32_from_ffi(b)))
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_cmp_float(a: isize, b: isize) -> isize {
+    use core::cmp::Ordering::*;
+
+    //FIXME
+    match f32_from_ffi(a)
+        .partial_cmp(&f32_from_ffi(b))
+        .unwrap_or(Greater)
+    {
+        Less => -1,
+        Equal => 0,
+        Greater => 1,
+    }
 }
 
 /// Detiene el programa por una cantidad de milisegundos.
@@ -358,4 +420,12 @@ fn try_usize(as_isize: isize) -> usize {
     as_isize
         .try_into()
         .expect("attempted to use negative integer as index")
+}
+
+fn f32_from_ffi(arg: isize) -> f32 {
+    f32::from_bits(arg as u32)
+}
+
+fn f32_to_ffi(float: f32) -> isize {
+    float.to_bits() as isize
 }
