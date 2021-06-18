@@ -1060,8 +1060,8 @@ impl<S: Sink> Context<'_, S> {
 
             let op = match (op, typ) {
                 (_, Float) => {
-                    this.do_float_binary(at, into, op, rhs_local)?;
-                    return Ok((Type::Float, Ownership::Owned, Type::Float));
+                    let typ = this.do_float_binary(at, into, op, rhs_local)?;
+                    return Ok((Type::Float, Ownership::Owned, typ));
                 }
 
                 (ParseOp::Add, Int) => IrOp::Arithmetic(ArithmeticOp::Add),
@@ -1136,7 +1136,7 @@ impl<S: Sink> Context<'_, S> {
         lhs: Local,
         op: parse::BinOp,
         rhs: Local,
-    ) -> Semantic<()> {
+    ) -> Semantic<Type> {
         enum FloatEval {
             Arithmetic(&'static str),
             Logic(ir::LogicOp),
@@ -1167,7 +1167,11 @@ impl<S: Sink> Context<'_, S> {
         };
 
         match float_eval {
-            Arithmetic(builtin) => self.do_builtin_assign(lhs, builtin, rhs),
+            Arithmetic(builtin) => {
+                self.do_builtin_assign(lhs, builtin, rhs);
+                Ok(Type::Float)
+            }
+
             Logic(op) => self.ephemeral(|this, zero| {
                 this.sink.push(Instruction::Call {
                     target: Function::External("builtin_cmp_float"),
@@ -1179,11 +1183,9 @@ impl<S: Sink> Context<'_, S> {
                 this.sink
                     .push(Instruction::Binary(lhs, ir::BinOp::Logic(op), zero));
 
-                Ok((Type::Int, Ownership::Owned, ()))
-            })?,
+                Ok((Type::Int, Ownership::Owned, Type::Bool))
+            }),
         }
-
-        Ok(())
     }
 
     fn do_builtin_assign(&mut self, lhs: Local, builtin: &'static str, rhs: Local) {
