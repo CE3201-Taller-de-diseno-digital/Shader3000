@@ -107,27 +107,27 @@ pub extern "C" fn builtin_drop_mat(mat: *mut Mat) {
 }
 
 #[no_mangle]
-pub extern "C" fn builtin_eq_list(first: *mut List, second: *mut List) -> bool {
+pub extern "C" fn builtin_eq_list(first: *mut List, second: *mut List) -> isize {
     let (first, second) = unsafe { (&*first, &*second) };
-    first == second
+    bool_to_ffi(first == second)
 }
 
 #[no_mangle]
-pub extern "C" fn builtin_eq_mat(first: *mut Mat, second: *mut Mat) -> bool {
+pub extern "C" fn builtin_eq_mat(first: *mut Mat, second: *mut Mat) -> isize {
     let (first, second) = unsafe { (&*first, &*second) };
-    first == second
+    bool_to_ffi(first == second)
 }
 
 #[no_mangle]
-pub extern "C" fn builtin_index_list(list: *mut List, index: isize) -> bool {
+pub extern "C" fn builtin_index_list(list: *mut List, index: isize) -> isize {
     let list = unsafe { &*list };
-    list[try_usize(index)]
+    bool_to_ffi(list[try_usize(index)])
 }
 
 #[no_mangle]
-pub extern "C" fn builtin_index_entry_mat(mat: *mut Mat, row: isize, column: isize) -> bool {
+pub extern "C" fn builtin_index_entry_mat(mat: *mut Mat, row: isize, column: isize) -> isize {
     let mat = unsafe { &*mat };
-    mat[try_usize(row)][try_usize(column)]
+    bool_to_ffi(mat[try_usize(row)][try_usize(column)])
 }
 
 #[no_mangle]
@@ -438,4 +438,8 @@ fn f32_from_ffi(arg: isize) -> f32 {
 
 fn f32_to_ffi(float: f32) -> isize {
     float.to_bits() as isize
+}
+
+fn bool_to_ffi(boolean: bool) -> isize {
+    boolean as isize
 }
