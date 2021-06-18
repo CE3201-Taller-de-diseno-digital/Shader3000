@@ -258,9 +258,6 @@ pub enum SemanticError {
 
     #[error("This global statement is in conflict with another symbol")]
     GlobalLiftConflict,
-
-    #[error("Floats are not supported by this implementation")]
-    Floats,
 }
 
 impl parse::Ast {
@@ -1062,11 +1059,26 @@ impl<S: Sink> Context<'_, S> {
             use Type::*;
 
             let op = match (op, typ) {
+                (_, Float) => {
+                    this.do_float_binary(at, into, op, rhs_local)?;
+                    return Ok((Type::Float, Ownership::Owned, Type::Float));
+                }
+
                 (ParseOp::Add, Int) => IrOp::Arithmetic(ArithmeticOp::Add),
                 (ParseOp::Sub, Int) => IrOp::Arithmetic(ArithmeticOp::Sub),
                 (ParseOp::Mul, Int) => IrOp::Arithmetic(ArithmeticOp::Mul),
                 (ParseOp::Mod, Int) => IrOp::Arithmetic(ArithmeticOp::Mod),
                 (ParseOp::IntegerDiv, Int) => IrOp::Arithmetic(ArithmeticOp::Div),
+
+                (ParseOp::Div, Int) => {
+                    this.do_builtin_assign(into, "builtin_div_int", rhs_local);
+                    return Ok((Type::Int, Ownership::Owned, Type::Float));
+                }
+
+                (ParseOp::Pow, Int) => {
+                    this.do_builtin_assign(into, "builtin_pow_int", rhs_local);
+                    return Ok((Type::Int, Ownership::Owned, Type::Float));
+                }
 
                 (ParseOp::Equal, Int | Bool) => IrOp::Logic(LogicOp::Equal),
                 (ParseOp::NotEqual, Int | Bool) => IrOp::Logic(LogicOp::NotEqual),
@@ -1077,9 +1089,9 @@ impl<S: Sink> Context<'_, S> {
 
                 (ParseOp::Equal | ParseOp::NotEqual, List | Mat) => {
                     let comparator = if typ == List {
-                        "builtin_cmp_list"
+                        "builtin_eq_list"
                     } else {
-                        "builtin_cmp_mat"
+                        "builtin_eq_mat"
                     };
 
                     this.ephemeral(|this, lhs_local| {
@@ -1100,8 +1112,6 @@ impl<S: Sink> Context<'_, S> {
                     return Ok((typ, rhs_ownership, Bool));
                 }
 
-                (ParseOp::Div, Int) => return Err(Located::at(SemanticError::Floats, at.clone())),
-
                 _ => {
                     return Err(Located::at(
                         SemanticError::InvalidOperands(op, typ, typ),
@@ -1118,6 +1128,70 @@ impl<S: Sink> Context<'_, S> {
             this.sink.push(Instruction::Binary(into, op, rhs_local));
             Ok((typ, rhs_ownership, result_type))
         })
+    }
+
+    fn do_float_binary(
+        &mut self,
+        location: &Location,
+        lhs: Local,
+        op: parse::BinOp,
+        rhs: Local,
+    ) -> Semantic<()> {
+        enum FloatEval {
+            Arithmetic(&'static str),
+            Logic(ir::LogicOp),
+        }
+
+        use parse::BinOp::*;
+        use FloatEval::*;
+
+        let float_eval = match op {
+            Add => Arithmetic("builtin_add_float"),
+            Sub => Arithmetic("builtin_sub_float"),
+            Mul => Arithmetic("builtin_mul_float"),
+            Div => Arithmetic("builtin_div_float"),
+            Pow => Arithmetic("builtin_pow_float"),
+            Equal => Logic(ir::LogicOp::Equal),
+            NotEqual => Logic(ir::LogicOp::NotEqual),
+            Less => Logic(ir::LogicOp::Less),
+            LessOrEqual => Logic(ir::LogicOp::LessOrEqual),
+            Greater => Logic(ir::LogicOp::Greater),
+            GreaterOrEqual => Logic(ir::LogicOp::GreaterOrEqual),
+
+            _ => {
+                return Err(Located::at(
+                    SemanticError::InvalidOperands(op, Type::Float, Type::Float),
+                    location.clone(),
+                ))
+            }
+        };
+
+        match float_eval {
+            Arithmetic(builtin) => self.do_builtin_assign(lhs, builtin, rhs),
+            Logic(op) => self.ephemeral(|this, zero| {
+                this.sink.push(Instruction::Call {
+                    target: Function::External("builtin_cmp_float"),
+                    arguments: vec![lhs, rhs],
+                    output: Some(lhs),
+                });
+
+                this.sink.push(Instruction::LoadConst(0, zero));
+                this.sink
+                    .push(Instruction::Binary(lhs, ir::BinOp::Logic(op), zero));
+
+                Ok((Type::Int, Ownership::Owned, ()))
+            })?,
+        }
+
+        Ok(())
+    }
+
+    fn do_builtin_assign(&mut self, lhs: Local, builtin: &'static str, rhs: Local) {
+        self.sink.push(Instruction::Call {
+            target: Function::External(builtin),
+            arguments: vec![lhs, rhs],
+            output: Some(lhs),
+        });
     }
 
     fn eval_len(&mut self, expr: &Located<parse::Expr>, into: Local) -> Semantic<()> {
