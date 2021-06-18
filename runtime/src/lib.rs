@@ -41,9 +41,6 @@
 extern crate alloc;
 
 #[cfg(target_arch = "xtensa")]
-extern crate compiler_builtins;
-
-#[cfg(target_arch = "xtensa")]
 extern crate xtensa_lx_rt;
 
 #[cfg(target_family = "unix")]
