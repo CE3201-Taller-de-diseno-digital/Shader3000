@@ -1,0 +1,66 @@
+procedure main(){
+
+	##global matrix = [[]];
+	
+	##global tru = false;
+
+}
+
+procedure hour_glass(times : type(11) , slice : type(false)){
+
+	for n in times{
+
+		matrix.insert([true,true,true,true,true,true,true,true],0);
+		
+		
+		matrix.insert([false,true,true,true,true,true,true,false],0,0);
+		
+		
+		matrix.insert([false,false,true,true,true,true,false,false],0,0);
+		
+		
+		matrix.insert([false,false,false,true,true,false,false,false],0,0);
+		
+		
+		matrix.insert([false,false,false,true,true,false,false,false],0,0);
+		
+		
+		matrix.insert([false,false,true,true,true,true,false,false],0,0);
+		
+		
+		matrix.insert([false,true,true,true,true,true,true,false],0,0);
+		
+		
+		matrix.insert([true,true,true,true,true,true,true,true],0,0);
+		
+	}
+	
+	for num in matrix.shapeF step 2 {
+	
+		matrix.delete(0,0);
+	
+	}
+	
+	
+	for i in matrix.shapeF{
+	
+		for n in 8 {
+		
+			if i >= matrix.shapeF - 7{
+				
+				printledX("F",n,[false,false,false,false,false,false,false,false]);
+			}
+			
+			if i < matrix.shapeF-7{
+			
+				printledX("F",n,matrix[i+n]);
+			
+			}
+		
+		}
+	
+	}
+	
+}
+
+	

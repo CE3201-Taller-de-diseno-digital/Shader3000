@@ -31,7 +31,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::io::BufReader;
 use std::path::Path;
-use std::process::{Command};
+use std::process::Command;
 
 /// Función main
 /// Incia la aplicación de GTK
@@ -71,9 +71,7 @@ fn build_ui(application: &gtk::Application) {
 
     // Load the .css file
     let provider = gtk::CssProvider::new();
-    provider
-        .load_from_path("resources/style.css")
-        .unwrap();
+    provider.load_from_path("resources/style.css").unwrap();
     gtk::StyleContext::add_provider_for_screen(
         &window.get_screen().unwrap(),
         &provider,
