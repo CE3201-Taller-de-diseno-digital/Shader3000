@@ -69,6 +69,7 @@ pub enum Type {
     Bool,
     List,
     Mat,
+    Float,
     Of(Located<Expr>),
 }
 
@@ -781,6 +782,8 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
             Token::Keyword(Keyword::Bool) => Type::Bool,
             Token::Keyword(Keyword::List) => Type::List,
             Token::Keyword(Keyword::Mat) => Type::Mat,
+            Token::Keyword(Keyword::Float) => Type::Float,
+
             Token::Keyword(Keyword::Type) => {
                 self.expect(Token::OpenParen)?;
                 let expr = self.expr().strict()?;

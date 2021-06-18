@@ -86,6 +86,7 @@ pub enum Type {
     Bool,
     List,
     Mat,
+    Float,
 }
 
 impl Display for Type {
@@ -95,6 +96,7 @@ impl Display for Type {
             Type::Bool => "bool",
             Type::List => "list",
             Type::Mat => "mat",
+            Type::Float => "float",
         };
 
         fmt.write_str(string)
@@ -663,6 +665,7 @@ impl<S: Sink> Context<'_, S> {
                         Type::Int => "builtin_debug_int",
                         Type::List => "builtin_debug_list",
                         Type::Mat => "builtin_debug_mat",
+                        Type::Float => "builtin_debug_float",
                     };
 
                     this.sink.push(Instruction::Call {
@@ -858,6 +861,7 @@ impl<S: Sink> Context<'_, S> {
                 parse::Type::Bool => Ok(Type::Bool),
                 parse::Type::List => Ok(Type::List),
                 parse::Type::Mat => Ok(Type::Mat),
+                parse::Type::Float => Ok(Type::Float),
                 parse::Type::Of(expr) => self.type_check(expr),
             })
             .collect()
@@ -930,8 +934,7 @@ impl<S: Sink> Context<'_, S> {
         let (typ, ownership) = self.eval(expr, into)?;
         let cloner = match (typ, ownership) {
             (_, Owned) => None,
-            (Type::Int, _) => None,
-            (Type::Bool, _) => None,
+            (Type::Int | Type::Bool | Type::Float, _) => None,
             (Type::List, Borrowed) => Some("builtin_ref_list"),
             (Type::Mat, Borrowed) => Some("builtin_ref_mat"),
         };
@@ -1439,8 +1442,7 @@ fn break_assignment<'a>(
 fn destructor(typ: Type, ownership: Ownership) -> Option<&'static str> {
     match (typ, ownership) {
         (_, Ownership::Borrowed) => None,
-        (Type::Int, _) => None,
-        (Type::Bool, _) => None,
+        (Type::Int | Type::Bool | Type::Float, _) => None,
         (Type::List, Ownership::Owned) => Some("builtin_drop_list"),
         (Type::Mat, Ownership::Owned) => Some("builtin_drop_mat"),
     }
@@ -1467,6 +1469,7 @@ fn mangle(name: &Identifier, types: &[Type]) -> String {
             Type::Mat => 'm',
             Type::Bool => 'b',
             Type::List => 'l',
+            Type::Float => 'f',
         }));
     }
 
