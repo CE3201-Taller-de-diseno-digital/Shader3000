@@ -597,6 +597,7 @@ impl<S: InputStream> Lexer<S> {
                     if let Ok(keyword) = self::Keyword::from_str(&word) {
                         break Ok(Keyword(keyword));
                     } else if word.chars().nth(0).unwrap().is_ascii_uppercase() {
+                        self.next = self.start.clone();
                         break Err(LexerError::UppercaseId);
                     } else {
                         break Ok(Id(Identifier(Rc::new(NoCase::new(std::mem::take(word))))));
