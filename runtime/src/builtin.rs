@@ -240,6 +240,16 @@ pub extern "C" fn builtin_range(length: isize, value: bool) -> *mut List {
 }
 
 #[no_mangle]
+pub extern "C" fn builtin_cast_int_float(integer: isize) -> isize {
+    f32_to_ffi(integer as f32)
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_cast_float_int(float: isize) -> isize {
+    f32_from_ffi(float) as isize
+}
+
+#[no_mangle]
 pub extern "C" fn builtin_div_int(a: isize, b: isize) -> isize {
     f32_to_ffi((a as f32) / (b as f32))
 }

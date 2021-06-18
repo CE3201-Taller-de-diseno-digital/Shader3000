@@ -59,7 +59,7 @@ nocite: |
 <Type> -> Int | Bool | List | Mat | Type(<Expr>)
 <TimeUnit> -> "mil" | "seg" | "min"
 <ObjectKind> -> "c" | "f" | "m"
-<BinOp> -> + | - | * | ** | / | % | // | == | <> | < | <= | > | >=
+<BinOp> ->  ** | * | / | // | % | + | - | == | <> | < | <= | > | >=
 <Index> -> [<Expr>] | [<Expr>, <Expr>] | [<Expr>:<Expr>] | [:, <Expr>]   
 <Indices> -> <Index> | <Index><Indices> | epsilon 
 <Target> -> <Identifier><Indices>
@@ -73,8 +73,9 @@ nocite: |
 <Range> -> Range(<Expr>,<Expr>)
 <List> -> [<Values>] | []
 <Negate> -> -<Expr>
-<Binary> -> (<Expr> <BinOp> <Expr>) | <Expr> <BinOP> <Expr>
-<Expr> -> True | False | <Integer> | <Read> | <Attr> | <Len> | <Range>
+<Binary> -> <Expr> <BinOP> <Expr>
+<Expr> -> <Expression> | (<Expr>)
+<Expression> -> True | False | <Integer> | <Read> | <Attr> | <Len> | <Range>
 	| <List> | <Negate> | <Binary> 
 <Values> -> <Expr> | <Expr>,<Values> 
 <Arguments> -> <Expr> | <Expr>,<Arguments>

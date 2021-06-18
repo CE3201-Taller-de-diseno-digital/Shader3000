@@ -13,5 +13,7 @@ mkdir -p "$LIB_NATIVE" "$LIB_ESP8266"
 cp "$RELEASE"/{compiler,editor} "$DIST"
 cp $RELEASE/libruntime.a "$LIB_NATIVE"
 
+cp -r editor/resources "$DIST/"
+
 cp "$CROSS_RELEASE"/libruntime.a "$LIB_ESP8266"
 find "$CROSS_RELEASE" -name '*.x' -exec cp {} $DIST/lib/esp8266 \;

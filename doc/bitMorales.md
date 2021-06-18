@@ -78,7 +78,7 @@ Se logró encontrar una forma de activar las interrupciones por hardware
 ### 1 de junio
 
 Se encuentran algunos problemas de inconsistencia con el manejo de los timers. Por alguna razón no definida, hay síntomas de presencia de deadlocks, sin embargo no se puede afirmar con seguridad. Existen posibilidades de malfuncionamientos como producto de otros elementos. 
-Se decide explorar la posibilidad de que la causa de los problemas de inconsistencia sea un dealock, por lo que se procede a intentar el uso de SpinLocks disponibles en uno de los crates utilizados. El código no servía adecuadamente sin ajustes, por lo cuál se consultó con el autor del módulo (Mabez) sobre el procedimiento a llevar a cabo para poder utilizar esta variedad de mutex.
+Se decide explorar la posibilidad de que la causa de los problemas de inconsistencia sea un deadlock, por lo que se procede a intentar el uso de SpinLocks disponibles en uno de los crates utilizados. El código no servía adecuadamente sin ajustes, por lo cuál se consultó con el autor del módulo (Mabez) sobre el procedimiento a llevar a cabo para poder utilizar esta variedad de mutex.
 
 ### 2 de junio
 
@@ -99,14 +99,18 @@ Se agregan funcionalidades de blink para milisegundos, segundos y minutos en el 
 
 ### 5 de junio
 
+Se agregan prototipos para builtins relacionadas al printled.
 ### 6 de junio
 
 ### 7 de junio
 
 ### 8 de junio
 
+
 ### 9 de junio
 
+Se realizan algunos cambios de orden en la documentación y se agregan algunas referencias
+Se cambian anotaciones de la función de interrupción por timer para que la misma funcione correctamente
 ### 10 de junio
 
 ### 11 de junio
@@ -117,10 +121,16 @@ Se agregan funcionalidades de blink para milisegundos, segundos y minutos en el 
 
 ### 14 de junio
 
+
 ### 15 de junio
 
+Se agrega diagrama de arquitectura del sistema y se documentan los problemas encontrados en la realización del proyecto
 ### 16 de junio
 
+Se agrega la información relacionada a los atributos desarrollados durante el proyecto
 ### 17 de junio
 
+Se termina de documentar la definición de la gramática del lenguaje siendo compilado.
 ### 18 de junio
+
+Se realizan pruebas para confirmar el origen de un problema que impide almacenar el programa en la sección irom_seg del microcontrolador. 

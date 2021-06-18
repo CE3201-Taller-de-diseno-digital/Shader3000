@@ -59,7 +59,7 @@ fn build_ui(application: &gtk::Application) {
     //______________/  Create main window
 
     //Load .glade file
-    let glade_src = include_str!("resources/IDE.glade");
+    let glade_src = include_str!("../resources/IDE.glade");
     let builder = gtk::Builder::from_string(glade_src);
 
     //create main window
@@ -100,12 +100,21 @@ fn build_ui(application: &gtk::Application) {
     let scroll: gtk::ScrolledWindow = builder.get_object("sourceHold").unwrap();
 
     //SourceView
-    let buffer = sourceview::Buffer::new_with_language(
-        &sourceview::LanguageManager::get_default()
-            .unwrap()
-            .get_language("led")
-            .unwrap(),
-    );
+    let buffer = {
+        let language_manager = sourceview::LanguageManager::get_default().unwrap();
+        let mut search_paths = language_manager
+            .get_search_path()
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>();
+
+        search_paths.push("resources".into());
+
+        let search_paths = search_paths.iter().map(String::as_str).collect::<Vec<_>>();
+        language_manager.set_search_path(&search_paths);
+
+        sourceview::Buffer::new_with_language(&language_manager.get_language("led").unwrap())
+    };
 
     //Set sourceview proprieties
     buffer.set_highlight_syntax(true);

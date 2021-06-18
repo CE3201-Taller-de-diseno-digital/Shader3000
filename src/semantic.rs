@@ -258,6 +258,9 @@ pub enum SemanticError {
 
     #[error("This global statement is in conflict with another symbol")]
     GlobalLiftConflict,
+
+    #[error("Cannot cast `{0}` to `{1}`")]
+    BadCast(Type, Type),
 }
 
 impl parse::Ast {
@@ -853,18 +856,22 @@ impl<S: Sink> Context<'_, S> {
         procedure
             .parameters()
             .iter()
-            .map(|param| match param.of().as_ref() {
-                parse::Type::Int => Ok(Type::Int),
-                parse::Type::Bool => Ok(Type::Bool),
-                parse::Type::List => Ok(Type::List),
-                parse::Type::Mat => Ok(Type::Mat),
-                parse::Type::Float => Ok(Type::Float),
-                parse::Type::Of(expr) => self.type_check(expr),
-            })
+            .map(|param| self.scan_type(param.of()))
             .collect()
     }
 
-    fn type_check(&mut self, expr: &Located<parse::Expr>) -> Semantic<Type> {
+    fn scan_type(&self, typ: &Located<parse::Type>) -> Semantic<Type> {
+        match typ.as_ref() {
+            parse::Type::Int => Ok(Type::Int),
+            parse::Type::Bool => Ok(Type::Bool),
+            parse::Type::List => Ok(Type::List),
+            parse::Type::Mat => Ok(Type::Mat),
+            parse::Type::Float => Ok(Type::Float),
+            parse::Type::Of(expr) => self.type_check(expr),
+        }
+    }
+
+    fn type_check(&self, expr: &Located<parse::Expr>) -> Semantic<Type> {
         let mut context = Context {
             scope: SymbolTable {
                 outer: Some(&self.scope),
@@ -1014,8 +1021,15 @@ impl<S: Sink> Context<'_, S> {
                 Ok((Type::List, Owned))
             }
 
-            New(_) => todo!(),
-            Cast(_, _) => todo!(),
+            New(typ) => {
+                let typ = self.eval_new(typ, into)?;
+                Ok((typ, Owned))
+            }
+
+            Cast(typ, inner) => {
+                let (typ, ownership) = self.eval_cast(expr.location(), typ, inner, into)?;
+                Ok((typ, ownership))
+            }
 
             List(items) => {
                 let typ = self.eval_sequence(&items, into)?;
@@ -1034,6 +1048,75 @@ impl<S: Sink> Context<'_, S> {
                 Ok((typ, Owned))
             }
         }
+    }
+
+    fn eval_new(&mut self, typ: &Located<parse::Type>, into: Local) -> Semantic<Type> {
+        let at = typ.location();
+        let typ = self.scan_type(typ)?;
+
+        match typ {
+            Type::Int | Type::Bool => self.sink.push(Instruction::LoadConst(0, into)),
+            Type::List => self.eval_fixed_call("builtin_new_list", at, &[], &[], Some(into))?,
+            Type::Mat => self.eval_fixed_call("builtin_new_mat", at, &[], &[], Some(into))?,
+
+            Type::Float => {
+                self.sink.push(Instruction::LoadConst(0, into));
+                self.sink.push(Instruction::Call {
+                    target: Function::External("builtin_cast_int_float"),
+                    arguments: vec![into],
+                    output: Some(into),
+                });
+            }
+        }
+
+        Ok(typ)
+    }
+
+    fn eval_cast(
+        &mut self,
+        at: &Location,
+        typ: &Located<parse::Type>,
+        expr: &Located<parse::Expr>,
+        into: Local,
+    ) -> Semantic<(Type, Ownership)> {
+        let (from_type, ownership) = self.eval(expr, into)?;
+        let to_type = self.scan_type(typ)?;
+
+        let caster = match (from_type, to_type) {
+            (a, b) if a == b => None,
+
+            (Type::Int, Type::Bool) => self.ephemeral(|this, zero| {
+                this.sink.push(Instruction::LoadConst(0, zero));
+
+                let op = ir::BinOp::Logic(ir::LogicOp::NotEqual);
+                this.sink.push(Instruction::Binary(into, op, zero));
+
+                Ok((Type::Int, Ownership::Owned, None))
+            })?,
+
+            // Este cast no altera la representación binaria
+            (Type::Bool, Type::Int) => None,
+
+            (Type::Int, Type::Float) => Some("builtin_cast_int_float"),
+            (Type::Float, Type::Int) => Some("builtin_cast_float_int"),
+
+            _ => {
+                return Err(Located::at(
+                    SemanticError::BadCast(from_type, to_type),
+                    at.clone(),
+                ))
+            }
+        };
+
+        if let Some(caster) = caster {
+            self.sink.push(Instruction::Call {
+                target: Function::External(caster),
+                arguments: vec![into],
+                output: Some(into),
+            });
+        }
+
+        Ok((to_type, ownership))
     }
 
     fn eval_binary(
