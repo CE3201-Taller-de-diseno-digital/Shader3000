@@ -78,6 +78,10 @@ pub enum LexerError {
     /// Una constante entera se encuentra fuera de rango.
     #[error("Integer literal overflow, valid range is [0, {INT_MAX}]")]
     IntOverflow,
+    ///
+    /// Se trató de comenzar un identificador con una letra mayúscula.
+    #[error("Identifiers must begin with a lowercase letter")]
+    UppercaseId,
 }
 
 /// Un identificador.
@@ -592,6 +596,8 @@ impl<S: InputStream> Lexer<S> {
                 (Word(word), _) => {
                     if let Ok(keyword) = self::Keyword::from_str(&word) {
                         break Ok(Keyword(keyword));
+                    } else if word.chars().nth(0).unwrap().is_ascii_uppercase() {
+                        break Err(LexerError::UppercaseId);
                     } else {
                         break Ok(Id(Identifier(Rc::new(NoCase::new(std::mem::take(word))))));
                     }
