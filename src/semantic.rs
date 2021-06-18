@@ -1014,6 +1014,9 @@ impl<S: Sink> Context<'_, S> {
                 Ok((Type::List, Owned))
             }
 
+            New(_) => todo!(),
+            Cast(_, _) => todo!(),
+
             List(items) => {
                 let typ = self.eval_sequence(&items, into)?;
                 Ok((typ, Owned))
