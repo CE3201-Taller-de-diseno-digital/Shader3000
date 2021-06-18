@@ -1,0 +1,4 @@
+procedure main(){
+	blink(0,0,500, "mil", true);
+	
+}
