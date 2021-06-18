@@ -558,17 +558,118 @@ impl<S: Sink> Context<'_, S> {
         condition: &Located<parse::Expr>,
         body: &[parse::Statement],
     ) -> Semantic<()> {
-        let if_false = self.sink.next_label();
+        match condition.as_ref() {
+            parse::Expr::Binary {
+                lhs,
+                op: op @ (parse::BinOp::Equal | parse::BinOp::NotEqual),
+                rhs,
+                ..
+            } if (self.type_check(lhs)?, self.type_check(rhs)?) == (Type::List, Type::Bool) => {
+                return self.scan_iterated_conditional(lhs, *op, rhs, body);
+            }
 
-        self.ephemeral(|this, local| {
-            this.eval_expecting(condition, local, Type::Bool)?;
-            this.sink.push(Instruction::JumpIfFalse(local, if_false));
+            _ => {
+                let if_false = self.sink.next_label();
+
+                self.ephemeral(|this, local| {
+                    this.eval_expecting(condition, local, Type::Bool)?;
+                    this.sink.push(Instruction::JumpIfFalse(local, if_false));
+
+                    Ok((Type::Bool, Ownership::Owned, ()))
+                })?;
+
+                self.subscope(|this| this.scan_statements(body))?;
+                self.sink.push(Instruction::SetLabel(if_false));
+
+                Ok(())
+            }
+        }
+    }
+
+    fn scan_iterated_conditional(
+        &mut self,
+        lhs: &Located<parse::Expr>,
+        op: parse::BinOp,
+        rhs: &Located<parse::Expr>,
+        body: &[parse::Statement],
+    ) -> Semantic<()> {
+        let limit = self.sink.alloc_local();
+        let iterator = self.sink.alloc_local();
+        let iterable = self.sink.alloc_local();
+
+        let (_, ownership) = self.eval(lhs, iterable)?;
+        self.sink.push(Instruction::LoadConst(0, iterator));
+        self.sink.push(Instruction::Call {
+            target: Function::External("builtin_len_list"),
+            arguments: vec![iterable],
+            output: Some(limit),
+        });
+
+        let condition_label = self.sink.next_label();
+        let end_label = self.sink.next_label();
+        let false_label = self.sink.next_label();
+
+        self.sink.push(Instruction::SetLabel(condition_label));
+        self.ephemeral(|this, test_local| {
+            let less = ir::BinOp::Logic(ir::LogicOp::Less);
+
+            this.sink.push(Instruction::Move(iterator, test_local));
+            this.sink.push(Instruction::Binary(test_local, less, limit));
+            this.sink
+                .push(Instruction::JumpIfFalse(test_local, end_label));
 
             Ok((Type::Bool, Ownership::Owned, ()))
         })?;
 
+        self.ephemeral(|this, rhs_local| {
+            this.ephemeral(|this, entry_local| {
+                this.sink.push(Instruction::Call {
+                    target: Function::External("builtin_index_list"),
+                    arguments: vec![iterable, iterator],
+                    output: Some(entry_local),
+                });
+
+                let op = match op {
+                    parse::BinOp::Equal => ir::LogicOp::Equal,
+                    parse::BinOp::NotEqual => ir::LogicOp::NotEqual,
+                    _ => unreachable!(),
+                };
+
+                let op = ir::BinOp::Logic(op);
+
+                this.eval(rhs, rhs_local)?;
+                this.sink
+                    .push(Instruction::Binary(rhs_local, op, entry_local));
+                this.sink
+                    .push(Instruction::JumpIfFalse(rhs_local, false_label));
+
+                Ok((
+                    Type::Bool,
+                    Ownership::Owned,
+                    (Type::Bool, Ownership::Owned, ()),
+                ))
+            })
+        })?;
+
         self.subscope(|this| this.scan_statements(body))?;
-        self.sink.push(Instruction::SetLabel(if_false));
+        self.sink.push(Instruction::SetLabel(false_label));
+
+        self.ephemeral(|this, one| {
+            let add = ir::BinOp::Arithmetic(ir::ArithmeticOp::Add);
+
+            this.sink.push(Instruction::LoadConst(1, one));
+            this.sink.push(Instruction::Binary(iterator, add, one));
+            this.sink.push(Instruction::Jump(condition_label));
+
+            Ok((Type::Int, Ownership::Owned, ()))
+        })?;
+
+        self.sink.push(Instruction::SetLabel(end_label));
+        self.drop(iterable, Type::List, ownership);
+
+        self.sink.free_local(limit);
+        self.sink.free_local(iterator);
+        self.sink.free_local(iterable);
 
         Ok(())
     }
