@@ -1,30 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
 
- This file is part of GtkSourceView
-
- Copyright (C) 2006-2007 Will Farrington <wcfarrington@gmail.com>
-
- GtkSourceView is free software; you can redistribute it and/or
- modify it under the terms of the GNU Lesser General Public
- License as published by the Free Software Foundation; either
- version 2.1 of the License, or (at your option) any later version.
-
- GtkSourceView is distributed in the hope that it will be useful,
- but WITHOUT ANY WARRANTY; without even the implied warranty of
- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- Lesser General Public License for more details.
-
- You should have received a copy of the GNU Lesser General Public
- License along with this library; if not, write to the Free Software
- Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
-
-
- Theme based on the style of the same name from pastie.caboo.se
--->
-
-<style-scheme id="cobalt" _name="Cobalt" version="1.0">
-  <author>Will Farrington</author>
+<style-scheme id="vulpeja" _name="Vulpeja" version="1.0">
+  <author>AnimationLed team</author>
   <_description>Blue based color scheme</_description>
 
   <!-- Colors -->
@@ -44,7 +21,7 @@
   <color name="steel_grey"                  value="#333333"/>
   <color name="spring_green"                value="#3ad900"/>
   <color name="sea_green"                   value="#00BF8C"/>
-  <color name="light_grey"                  value="#ad7fa8"/>
+  <color name="purple"                      value="#b13ea4"/>
   <color name="dark_red"                    value="#990000"/>
   <color name="bluish_grey"                 value="#777777"/>
   <color name="steelblue3"                  value="#4f94cd"/>
@@ -59,7 +36,7 @@
   <style name="current-line"                background="medium_blue"/>
   <style name="line-numbers"                foreground="light_blue" background="black_blue"/>
   <style name="draw-spaces"                 foreground="bluish_grey"/>
-  <style name="right-margin"                foreground="light_grey" background="light_grey"/>
+  <style name="right-margin"                foreground="purple" background="purple"/>
   <style name="background-pattern"          background="dark_medium_blue_blend"/>
 
   <!-- Bracket Matching -->
@@ -80,16 +57,16 @@
   <!-- Constants and Variables-->
   <style name="def:constant"                foreground="bluish_grey"/>
   <style name="def:string"                  foreground="spring_green"/>
-  <style name="def:special-char"            foreground="light_grey"/>
+  <style name="def:special-char"            foreground="purple"/>
   <style name="def:special-constant"        foreground="nail_polish_pink" bold="true"/>
   <style name="def:number"                  foreground="nail_polish_pink"/>
   <style name="def:floating-point"          foreground="nail_polish_pink"/>
   <style name="def:keyword"                 foreground="bright_orange" bold="true"/>
   <style name="def:builtin"                 foreground="bright_orange" bold="true"/>
-  <style name="def:variable"                foreground="light_grey"/>
+  <style name="def:variable"                foreground="purple"/>
 
   <!-- Identifiers -->
-  <style name="def:identifier"              foreground="light_grey"/>
+  <style name="def:identifier"              foreground="purple"/>
   <style name="def:function"                use-style="def:identifier"/>
 
   <!-- Statements -->
@@ -103,7 +80,7 @@
   <style name="def:warning"                 foreground="white" background="nail_polish_pink"/>
   <style name="def:note"                    foreground="neon_pink" bold="true"/>
   <style name="def:net-address-in-comment"  foreground="teal_blue" italic="false" underline="single"/>
-  <style name="def:preprocessor"            foreground="light_grey"/>
+  <style name="def:preprocessor"            foreground="purple"/>
 
   <!-- Heading styles, uncomment to enable -->
   <!--
@@ -143,7 +120,7 @@
   <style name="sh:function"                 foreground="neon_pink"/>
 
   <!-- XML Styles -->
-  <style name="xml:attribute-name"          foreground="light_grey"/>
+  <style name="xml:attribute-name"          foreground="purple"/>
   <style name="xml:element-name"            foreground="teal_blue"/>
   <style name="xml:entity"                  foreground="#blue"/>
   <style name="xml:processing-instruction"  bold="true"/>

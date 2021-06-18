@@ -131,6 +131,10 @@ fn build_ui(application: &gtk::Application) {
     scroll.add(&sourceview);
 
     //Themes
+
+    let theme_manager = sourceview::StyleSchemeManager::get_default().unwrap();
+    theme_manager.set_search_path(&["resources/themes"]);
+
     let themes: sourceview::StyleSchemeChooserButton = builder.get_object("themes").unwrap();
 
     //Terminal
