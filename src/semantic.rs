@@ -857,12 +857,12 @@ impl<S: Sink> Context<'_, S> {
 
                 (Some(Insert), Mat) => {
                     let (builtin, types) = if args.len() >= 3 {
-                        ("builtin_insert_mat", &[Type::Mat, Type::Int, Type::Int])
+                        ("builtin_insert_mat", &[Type::Mat, Type::Int, Type::Int][..])
                     } else {
-                        ("builtin_insert_end_mat", &[Type::Mat, Type::Int, Type::Int])
+                        ("builtin_insert_end_mat", &[Type::Mat, Type::Int][..])
                     };
 
-                    (Some(builtin), &types[..])
+                    (Some(builtin), types)
                 }
 
                 _ => {
