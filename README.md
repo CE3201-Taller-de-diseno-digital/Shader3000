@@ -568,6 +568,72 @@ Sourceview, sin embargo, si tiene una manera integrada de hacer syntax highlight
 
 Para solucionar este problema fue necesario recurrir a [@sourceview-doc] y [@gtk-sourceview].
 
+## 5.7. Programa compilado sobrepasa la capacidad de memoria disponible para programa almacenado, una vez integradas las operaciones de punto flotante
+
+### Descripción
+
+Parte de las razones por las que se había seleccionado el eps8266 como la plataforma destino fue el hecho
+de que la misma permitía el almacenamiento de programas de hasta 1MB, sin embargo, durante el proyecto se
+descubrieron problemas con la colocación del programa en la sección de memoria dedicada para datos de solo
+lectura. Como solución temporal a dichos problemas se decidió almacenar la completitud del programa en
+memoria ram, sin embargo, rápidamente se llegó al valor límite de esta memoria, particularmente luego de
+integrar las operaciones con punto flotante.
+
+El grupo se vió forzado a buscar una solución a los problemas que evitaban el uso de la memoria flash. El
+comportamiento del dispositivo se mostraba errático si se colocaba el programa entero en la sección de memoria
+`irom_seg`. La "solución" o forma de evitar este error en el caso de los autores de la biblioteca era
+simplemente habilitar la opción de `LTO` en el proceso de compilacón de los ejecutables, pero dicha forma de
+circundar el problema no era una opción para el equipo dada la arquitectura de la solución implementada. 
+
+### Intentos de solución
+
+1. Inicialmente se trató de encontrar una forma de integrar el código con la opción de lto aplicada al flujo
+   de trabajo, sin embargo, todas las posibilidades que se tomaron en cuenta en esta área tenían diversas
+   dificultades. Las dificultades se veían amplificadas por el hecho de que no hay soporte oficial de la
+   arquitectura de Xtensa por parte de LLVM. Cualquier intento de integrar código con la opción de lto
+   activada simplemente resultaría en tiempo perdido.
+2. Se solicitaron explicaciones sobre este comportamiento por medio de [@rust-xtensa-matrix], sin embargo la
+   respuesta obtenida fue insuficiente para poder encontrar la razón detrás del comportamiento detectado.
+   Robin Appelman, el encargado principal de dichos cambios respondió: _"I'm assuming there is something wrong with the linker script, but I don't know enough about linker scripts stuff to fix it"_.
+3. Se experimentó con configuraciones post-inicio en un clon del repositorio de xtensa-quickstart (encontrado
+   en [@xtensa-quickstart]). Se desactivó la opción de lto en las opciones de compilación, y se pudo
+   notar que la creación de un ejecutable funcional sin dicha opción era posible. Después de un análisis
+   más detenido de los resultados obtenidos, se notó que las versiones de la biblioteca podían ser un factor
+   fundamental que decidía el comportamiento del sistema si se trataba de almacenar un programa en `irom_seg`.
+   Probando forzar la dependencia directamente a commits del repositorio de la biblioteca de [@esp8266-hal]
+   se logró identificar que el cambio en comportamiento estaba presente desde el commit posterior al
+   correspondiente a la publicación de la versión 0.4.0 de la biblioteca. Se logran notar cambios importantes
+   en los archivos `memory.x` y `lib.rs` que proveen una manera de activar el caché de la memoria flash, el
+   cual parece ser necesario para poder utilizar el sector de `irom_seg`.  
+
+### Solución encontrada
+
+La información obtenida del intento de solución 2 fue utilizada para diseñar una posible solución. Se decidió
+que era necesario modificar archivios de la biblioteca de la cual dependía el proyecto, por lo que se realizó
+un fork del repositorio de dicha biblioteca, y se agregaron de vuelta las líneas correspondientes a la función `Cache_Read_Enable`. Una vez agregadas estas funcionalidades de nuevo a la biblioteca, se confirmó que los
+ejemplos del repositorio se podían cargar a la sección `irom_seg` y comportarse de la forma esperada sin
+necesidad de activar la opción de LTO.
+
+Una vez que se identificó esta restauración de funcionalidad para habilitar lectura de caché como la solución,
+se redireccionó la dependencia del proyecto al fork de la biblioteca creado.
+
+### Conclusiones
+
+- Los cambios entre versiones de una dependencia pueden afectar fuertemente el comportamiento de un software.
+- Las bibliotecas de abstracción de hardware para el esp8266 en Rust están pobremente documentadas. Varias
+  deciciones son inexplicables y no hay una forma de llegar a la razón detrás de un cambio.
+
+### Recomendaciones
+
+- En caso de estar trabajando con la biblioteca de abstracción de hardware esp8266-hal, realizar los cambios
+  mencionados en la sección de "Solución encontrada", esto pues permite usar la biblioteca sin necesidad de
+  utilizar la opción de lto, la cual puede ser conflictiva dependiendo del contexto.
+- Preferir microcontroladores que tienen mejor documentación en sus bibliotecas, esto pues es esencial para la
+  resolución de problemas
+
+### Bibliografía
+
+Para el proceso de resolución de este problema se consultó [@esp8266-techref] en búsqueda de información relacionada a la operación de la memoria flash externa. Se acudió a [@xtensa-quickstart] para realizar las pruebas mencionadas en los intentos de solución. Para información sobre la característica de lto mencionada, se consultó principalmente [@rustcbook]. Se utilizó el canal de [@rust-xtensa-matrix] para comunicación con los desarrolladores de la biblioteca.
 
 # 6. Conclusiones y Recomendaciones del Proyecto
 
