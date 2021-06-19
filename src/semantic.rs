@@ -1585,22 +1585,12 @@ impl<S: Sink> Context<'_, S> {
             output: Some(into),
         });
 
-        let zero = if is_mat {
-            let zero = self.sink.alloc_local();
-            self.sink.push(Instruction::LoadConst(0, zero));
-
-            Some(zero)
-        } else {
-            None
-        };
-
         let index = self.sink.alloc_local();
         for (i, expr) in items.iter().enumerate() {
             self.sink.push(Instruction::LoadConst(i as i32, index));
 
             let (insert, expected, arguments) = if is_mat {
-                let arguments = vec![into, item, zero.unwrap(), index];
-                ("builtin_insert_mat", Type::List, arguments)
+                ("builtin_push_mat", Type::List, vec![into, item])
             } else {
                 ("builtin_insert_list", Type::Bool, vec![into, index, item])
             };
@@ -1613,10 +1603,6 @@ impl<S: Sink> Context<'_, S> {
             });
 
             self.drop(item, expected, ownership);
-        }
-
-        if let Some(zero) = zero {
-            self.sink.free_local(zero);
         }
 
         self.sink.free_local(index);

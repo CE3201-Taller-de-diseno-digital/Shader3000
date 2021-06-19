@@ -25,7 +25,7 @@ use crate::{
 };
 
 type List = Vec<bool>;
-type Mat = Vec<Rc<Vec<bool>>>;
+type Mat = Vec<Rc<List>>;
 
 #[no_mangle]
 pub extern "C" fn builtin_debug(line: isize) {
@@ -153,50 +153,17 @@ pub extern "C" fn builtin_insert_list(list: *mut List, index: isize, item: bool)
 }
 
 #[no_mangle]
-pub extern "C" fn builtin_insert_mat(mat: *mut Mat, item: *mut List, mode: isize, index: isize) {
-    let mat = unsafe { &mut *mat };
-    let original = unsafe { Rc::from_raw(item) };
-    let item = Rc::clone(&original);
-    Rc::into_raw(original);
+pub extern "C" fn builtin_insert_mat(mat: *mut Mat, vectors: *mut Mat, mode: isize, index: isize) {
+    let (mat, vectors) = unsafe { (&mut *mat, &*vectors) };
+    insert_in_mat(mat, vectors, mode, try_usize(index));
+}
 
-    let index = try_usize(index);
-    let row_count = mat.len();
-    let column_count = mat.first().map(|first| first.len()).unwrap_or(0);
+#[no_mangle]
+pub extern "C" fn builtin_push_mat(mat: *mut Mat, item: *mut List) {
+    let (mat, item) = unsafe { (&mut *mat, Rc::from_raw(item)) };
 
-    match mode {
-        0 => {
-            assert!(
-                row_count == 0 || column_count == item.len(),
-                "attempted to insert row of length {} in {}x{} matrix",
-                item.len(),
-                row_count,
-                column_count
-            );
-
-            mat.insert(index, item);
-        }
-
-        1 => {
-            assert!(
-                row_count == 0 || row_count == item.len(),
-                "attempted to insert column of length {} in {}x{} matrix",
-                item.len(),
-                row_count,
-                column_count
-            );
-
-            if row_count == 0 {
-                (0..item.len()).for_each(|_| mat.push(Rc::new(List::new())));
-            }
-
-            for (row_list, entry) in mat.iter_mut().zip(item.iter().copied()) {
-                let row_list = unsafe { Rc::get_mut_unchecked(row_list) };
-                row_list.insert(index, entry);
-            }
-        }
-
-        _ => panic!("bad matrix insertion mode: {}", mode),
-    }
+    insert_in_mat(mat, core::slice::from_ref(&item), 0, mat.len());
+    Rc::into_raw(item);
 }
 
 #[no_mangle]
@@ -536,4 +503,46 @@ fn shapef(mat: &Mat) -> usize {
 
 fn shapec(mat: &Mat) -> usize {
     mat.first().map(|row| row.len()).unwrap_or(0)
+}
+
+fn insert_in_mat(mat: &mut Mat, vectors: &[Rc<List>], mode: isize, index: usize) {
+    let row_count = shapef(mat);
+    let column_count = shapec(mat);
+
+    for item in vectors.iter().rev() {
+        match mode {
+            0 => {
+                assert!(
+                    row_count == 0 || column_count == item.len(),
+                    "attempted to insert row of length {} in {}x{} matrix",
+                    item.len(),
+                    row_count,
+                    column_count
+                );
+
+                mat.insert(index, item.clone());
+            }
+
+            1 => {
+                assert!(
+                    row_count == 0 || row_count == item.len(),
+                    "attempted to insert column of length {} in {}x{} matrix",
+                    item.len(),
+                    row_count,
+                    column_count
+                );
+
+                if row_count == 0 {
+                    (0..item.len()).for_each(|_| mat.push(Rc::new(List::new())));
+                }
+
+                for (row_list, entry) in mat.iter_mut().zip(item.iter().copied()) {
+                    let row_list = unsafe { Rc::get_mut_unchecked(row_list) };
+                    row_list.insert(index, entry);
+                }
+            }
+
+            _ => panic!("bad matrix insertion mode: {}", mode),
+        }
+    }
 }
