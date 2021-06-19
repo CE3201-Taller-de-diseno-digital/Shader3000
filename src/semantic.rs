@@ -121,6 +121,18 @@ enum AssignmentMode {
     Normal,
 }
 
+enum Addressed {
+    List,
+    Mat,
+    Pod(Type),
+    ListEntry(Local),
+    MatEntry(Local, Local),
+    MatRow(Local),
+    MatColumn(Local),
+    ListSlice(Local, Local),
+    MatSlice(Local, Local),
+}
+
 trait Sink: Default {
     fn push(&mut self, instruction: Instruction);
 
@@ -261,6 +273,9 @@ pub enum SemanticError {
 
     #[error("Cannot cast `{0}` to `{1}`")]
     BadCast(Type, Type),
+
+    #[error("Invalid addressing mode for base type `{0}`")]
+    InvalidAddressing(Type),
 }
 
 impl parse::Ast {
@@ -861,7 +876,7 @@ impl<S: Sink> Context<'_, S> {
         use AssignmentMode::*;
 
         if !target.indices().is_empty() {
-            todo!();
+            return self.assign_indexed(target, value);
         }
 
         let value_type = self.type_check(value)?;
@@ -955,6 +970,133 @@ impl<S: Sink> Context<'_, S> {
         }
 
         Ok(())
+    }
+
+    fn assign_indexed(
+        &mut self,
+        target: &Located<parse::Target>,
+        value: &Located<parse::Expr>,
+    ) -> Semantic<()> {
+        self.address(target, |this, base, addressed| {
+            use Addressed::*;
+            let (builtin, typ, mut args) = match addressed {
+                ListEntry(index) => ("builtin_set_entry_list", Type::Bool, vec![base, index]),
+                MatEntry(row, col) => ("builtin_set_entry_mat", Type::Bool, vec![base, row, col]),
+                MatRow(row) => ("builtin_set_row_mat", Type::List, vec![base, row]),
+                MatColumn(col) => ("builtin_set_column_mat", Type::List, vec![base, col]),
+                ListSlice(from, to) => ("builtin_set_slice_list", Type::List, vec![base, from, to]),
+                MatSlice(from, to) => ("builtin_set_slice_mat", Type::Mat, vec![base, from, to]),
+                List | Mat | Pod(_) => unreachable!(),
+            };
+
+            this.ephemeral(move |this, value_local| {
+                let ownership = this.eval_expecting(value, value_local, typ)?;
+                args.push(value_local);
+
+                this.sink.push(Instruction::Call {
+                    target: Function::External(builtin),
+                    arguments: args,
+                    output: None,
+                });
+
+                Ok((typ, ownership, (false, ())))
+            })
+        })
+    }
+
+    fn address<F, R>(&mut self, target: &Located<parse::Target>, callback: F) -> Semantic<R>
+    where
+        F: FnOnce(&mut Self, Local, Addressed) -> Semantic<(bool, R)>,
+    {
+        let base = self.sink.alloc_local();
+        let base_type = self.read(target.var(), base)?;
+
+        use Addressed::*;
+
+        let mut addressed = match base_type {
+            Type::Bool | Type::Int | Type::Float => Pod(base_type),
+            Type::List => List,
+            Type::Mat => Mat,
+        };
+
+        let first = self.sink.alloc_local();
+        let second = self.sink.alloc_local();
+
+        let single = |this: &mut Self, local, expr, constructor: &dyn Fn(Local) -> Addressed| {
+            this.eval_expecting(expr, local, Type::Int)?;
+            Ok(constructor(local))
+        };
+
+        let double = |this: &mut Self,
+                      first_local,
+                      second_local,
+                      first_expr,
+                      second_expr,
+                      constructor: &dyn Fn(Local, Local) -> Addressed| {
+            this.eval_expecting(first_expr, first_local, Type::Int)?;
+            this.eval_expecting(second_expr, second_local, Type::Int)?;
+
+            Ok(constructor(first_local, second_local))
+        };
+
+        for index in target.indices().iter() {
+            use parse::Index;
+
+            addressed = match (addressed, index.as_ref()) {
+                (List, Index::Single(expr)) => single(self, first, expr, &ListEntry)?,
+
+                (List, Index::Range(from, to)) => {
+                    double(self, first, second, from, to, &ListSlice)?
+                }
+
+                (Mat, Index::Single(expr)) => single(self, first, expr, &MatRow)?,
+
+                (Mat, Index::Range(from, to)) => double(self, first, second, from, to, &MatSlice)?,
+
+                (Mat, Index::Indirect(row, col)) => {
+                    double(self, first, second, row, col, &MatEntry)?
+                }
+
+                (Mat, Index::Transposed(expr)) => single(self, first, expr, &MatColumn)?,
+
+                (MatRow(row), Index::Single(col)) => {
+                    single(self, second, col, &|col| MatEntry(row, col))?
+                }
+
+                (MatColumn(col), Index::Single(row)) => {
+                    single(self, second, row, &|row| MatEntry(row, col))?
+                }
+
+                _ => {
+                    return Err(Located::at(
+                        SemanticError::InvalidAddressing(base_type),
+                        target.location().clone(),
+                    ))
+                }
+            }
+        }
+
+        let (copy, result) = callback(self, base, addressed)?;
+        self.sink.free_local(first);
+        self.sink.free_local(second);
+
+        if copy {
+            let var = match self.scope.lookup(target.var())? {
+                Named::Var(var) => var,
+                _ => unreachable!(),
+            };
+
+            let instruction = match &var.access {
+                Access::Local(local) => Instruction::Move(base, *local),
+                Access::Global(global) => Instruction::StoreGlobal(base, global.clone()),
+            };
+
+            self.sink.push(instruction);
+        }
+
+        // No se ocupa self.drop(), necesariamente se está bajo Ownership::Borrowed
+        self.sink.free_local(base);
+        Ok(result)
     }
 
     fn parameter_types(&mut self, procedure: &parse::Procedure) -> Semantic<Vec<Type>> {
