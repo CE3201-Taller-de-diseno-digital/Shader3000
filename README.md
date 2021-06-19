@@ -257,17 +257,16 @@ para nuestro proceso de aprendizaje.
 
 ## 2.5. Uso de GTK como toolkit gráfico
 
-Orientados al desarrollo de la interfaz gráfica de estilo editor de código, el equipo comienza con  investigación acerca de un toolkit de desarrollo gráfico en Rust, del que se tenía conocimiento, Egui [rust-gui].  Tras la lectura minuciosa de la documentación dada por los creadores, y algunas pruebas prácticas el equipo toma la decisión de investigar mas acerca de otras opciones, pues, a pesar de las ventajas de trabajar en un toolkit gráfico nativo a Rust como Egui, específicamente el procesador de texto es altamente rudimentario, por lo que utilizarlo para implementar un editor representaba un reto mucho mayor de lo esperado.
+Orientados al desarrollo de la interfaz gráfica de estilo editor de código, el equipo comienza con  investigación acerca de un toolkit de desarrollo gráfico en Rust, del que se tenía conocimiento, Egui [@rust-gui].  Tras la lectura minuciosa de la documentación dada por los creadores, y algunas pruebas prácticas el equipo toma la decisión de investigar mas acerca de otras opciones, pues, a pesar de las ventajas de trabajar en un toolkit gráfico nativo a Rust como Egui, específicamente el procesador de texto es altamente rudimentario, por lo que utilizarlo para implementar un editor representaba un reto mucho mayor de lo esperado.
 
-Durante la investigación se descartan otras herramientas como Druid, Iced , Azul, entre otros, por la misma razón que egui, espacios de texto poco versátiles. Sin embargo, se encontró un proyecto de bindings de GTK para rust.[gtk-rs]. Este toolkit en específico posee la implementación de una herramienta especializada de GTK para realizar interfaces gráficas para editores de código conocido como el GTK-Sourceview [gtk-sourceview]. Se investigan más a fondo las características de dicha herramienta y se valoran sus beneficios sobre las desventajas de trabajar con bindings de GTK que no son nativos a Rust.
+Durante la investigación se descartan otras herramientas como Druid, Iced , Azul, entre otros, por la misma razón que egui, espacios de texto poco versátiles. Sin embargo, se encontró un proyecto de bindings de GTK para rust.[@gtk-rs]. Este toolkit en específico posee la implementación de una herramienta especializada de GTK para realizar interfaces gráficas para editores de código conocido como el GTK-Sourceview [@gtk-sourceview]. Se investigan más a fondo las características de dicha herramienta y se valoran sus beneficios sobre las desventajas de trabajar con bindings de GTK que no son nativos a Rust.
 
 Finalmente se toma la decisión de trabajar con GTK por las siguientes razones:
 - Posesión de herramienta especializada para el desarrollo de editores de código (gtksourceview).
 - Posibilidad de utilizar Glade para el diseño de la interfaz.
 - Similitud con otros toolkits con los cuales el equipo ya tenía experiencia.
-- Documentación amplia en para GTK [gtk-rs] [gtk-doc].
-- Documentación amplia para gtksourceview[gtk-doc].
-
+- Documentación amplia en para GTK [@gtk-rs] [@gtk-doc].
+- Documentación amplia para gtksourceview [@gtk-doc].
 
 # 3. Problemas conocidos
 
@@ -633,7 +632,7 @@ se redireccionó la dependencia del proyecto al fork de la biblioteca creado.
 
 ### Bibliografía
 
-Para el proceso de resolución de este problema se consultó [@esp8266-techref] en búsqueda de información relacionada a la operación de la memoria flash externa. Se acudió a [@xtensa-quickstart] para realizar las pruebas mencionadas en los intentos de solución. Para información sobre la característica de lto mencionada, se consultó principalmente [@rustcbook]. Se utilizó el canal de [@rust-xtensa-matrix] para comunicación con los desarrolladores de la biblioteca.
+Para el proceso de resolución de este problema se consultó [@esp8266-techref] en búsqueda de información relacionada a la operación de la memoria flash externa. Se acudió a [@xtensa-quickstart] para realizar las pruebas mencionadas en los intentos de solución. Para información sobre la característica de lto mencionada, se consultó principalmente [@rustcbook], en específico las secciones sobre "codegen" y "Linker Plugin Based LTO" . Se utilizó el canal de [@rust-xtensa-matrix] para comunicación con los desarrolladores de la biblioteca.
 
 # 6. Conclusiones y Recomendaciones del Proyecto
 
