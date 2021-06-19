@@ -159,6 +159,17 @@ pub extern "C" fn builtin_insert_mat(mat: *mut Mat, vectors: *mut Mat, mode: isi
 }
 
 #[no_mangle]
+pub extern "C" fn builtin_insert_end_mat(mat: *mut Mat, vectors: *mut Mat, mode: isize) {
+    let (mat, vectors) = unsafe { (&mut *mat, &*vectors) };
+    let length = match mode {
+        0 => shapef(mat),
+        _ => shapec(mat),
+    };
+
+    insert_in_mat(mat, vectors, mode, length);
+}
+
+#[no_mangle]
 pub extern "C" fn builtin_push_mat(mat: *mut Mat, item: *mut List) {
     let (mat, item) = unsafe { (&mut *mat, Rc::from_raw(item)) };
 
@@ -506,8 +517,19 @@ fn shapec(mat: &Mat) -> usize {
 }
 
 fn insert_in_mat(mat: &mut Mat, vectors: &[Rc<List>], mode: isize, index: usize) {
+    // Formalmente, para este punto ya ocurrió UB si la condición de
+    // aserción es falsa, ya que significa una violación de las reglas
+    // de ownership y borrowing. Es posible que esto sea un probleam
+    // cuando rustc utilice el atributo noalias. La solución correcta
+    // es realizar esta verificación antes de dereferenciar ambos.
+    assert!(
+        mat.as_slice() as *const _ != vectors as *const _,
+        "attempted to insert matrix into itself"
+    );
+
     let row_count = shapef(mat);
     let column_count = shapec(mat);
+    let mut corrected_rows = false;
 
     for item in vectors.iter().rev() {
         match mode {
@@ -532,8 +554,9 @@ fn insert_in_mat(mat: &mut Mat, vectors: &[Rc<List>], mode: isize, index: usize)
                     column_count
                 );
 
-                if row_count == 0 {
+                if row_count == 0 && !corrected_rows {
                     (0..item.len()).for_each(|_| mat.push(Rc::new(List::new())));
+                    corrected_rows = true;
                 }
 
                 for (row_list, entry) in mat.iter_mut().zip(item.iter().copied()) {

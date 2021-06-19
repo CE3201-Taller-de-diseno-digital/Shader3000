@@ -1,6 +1,7 @@
 use thiserror::Error;
 
 use std::{
+    borrow::Borrow,
     collections::{HashMap, HashSet},
     fmt::{self, Display},
     rc::Rc,
@@ -121,7 +122,8 @@ enum AssignmentMode {
     Normal,
 }
 
-enum Addressed {
+#[derive(Copy, Clone, Debug)]
+pub enum Addressed {
     List,
     Mat,
     Pod(Type),
@@ -131,6 +133,22 @@ enum Addressed {
     MatColumn(Local),
     ListSlice(Local, Local),
     MatSlice(Local, Local),
+}
+
+impl Display for Addressed {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Addressed::List => write!(fmt, "type `{}`", Type::List),
+            Addressed::Mat => write!(fmt, "type `{}`", Type::Mat),
+            Addressed::Pod(typ) => write!(fmt, "type `{}`", typ),
+            Addressed::ListEntry(_) => fmt.write_str("list entry"),
+            Addressed::MatEntry(_, _) => fmt.write_str("matrix entry"),
+            Addressed::MatRow(_) => fmt.write_str("matrix row"),
+            Addressed::MatColumn(_) => fmt.write_str("matrix column"),
+            Addressed::ListSlice(_, _) => fmt.write_str("list slice"),
+            Addressed::MatSlice(_, _) => fmt.write_str("matrix slice"),
+        }
+    }
 }
 
 trait Sink: Default {
@@ -256,7 +274,7 @@ pub enum SemanticError {
     #[error("Parameter `{0}` is bound more than once")]
     RepeatedParameter(Identifier),
 
-    #[error("Procedure family `{0}` exists, but the overload `{0}({1})` is not defined")]
+    #[error("Procedure family `{0}` exists, but the overload `{0}({1})` is undefined")]
     NoSuchOverload(Identifier, String),
 
     #[error("Invalid operands for `{0}`: `{1}` and `{2}`")]
@@ -276,6 +294,9 @@ pub enum SemanticError {
 
     #[error("Invalid addressing mode for base type `{0}`")]
     InvalidAddressing(Type),
+
+    #[error("Method `{0}` is undefined for {1} instances")]
+    NoSuchMethod(Identifier, Addressed),
 }
 
 impl parse::Ast {
@@ -565,7 +586,13 @@ impl<S: Sink> Context<'_, S> {
                     }
                 }
 
-                _ => todo!(),
+                MethodCall {
+                    target,
+                    method,
+                    args,
+                } => {
+                    self.scan_method_call(target, method, args)?;
+                }
             }
         }
 
@@ -799,6 +826,71 @@ impl<S: Sink> Context<'_, S> {
             }
 
             Ok((Type::Int, Ownership::Owned, ()))
+        })
+    }
+
+    fn scan_method_call(
+        &mut self,
+        target: &Located<parse::Target>,
+        name: &Located<Identifier>,
+        args: &[Located<parse::Expr>],
+    ) -> Semantic<()> {
+        self.address(target, |this, base, addressed| {
+            #[derive(Copy, Clone)]
+            enum Method {
+                Insert,
+            }
+
+            use Addressed::*;
+            use Method::*;
+
+            const METHODS: &'static [(NoCase<&'static str>, Method)] =
+                &[(NoCase::new("insert"), Insert)];
+
+            let method = METHODS
+                .iter()
+                .find(|(key, _)| key == name.as_ref())
+                .map(|(_, method)| *method);
+
+            let (builtin, arg_types) = match (method, addressed) {
+                (Some(Insert), List) => (Some("builtin_insert_list"), &[Type::Int, Type::Bool][..]),
+
+                (Some(Insert), Mat) => {
+                    let (builtin, types) = if args.len() >= 3 {
+                        ("builtin_insert_mat", &[Type::Mat, Type::Int, Type::Int])
+                    } else {
+                        ("builtin_insert_end_mat", &[Type::Mat, Type::Int, Type::Int])
+                    };
+
+                    (Some(builtin), &types[..])
+                }
+
+                _ => {
+                    return Err(Located::at(
+                        SemanticError::NoSuchMethod(name.as_ref().clone(), addressed),
+                        name.location().clone(),
+                    ))
+                }
+            };
+
+            let args = this.alloc_expecting(name.location(), args, arg_types)?;
+            if let Some(builtin) = builtin {
+                let arg_locals = std::iter::once(base)
+                    .chain(args.iter().map(|(local, _, _)| *local))
+                    .collect();
+
+                this.sink.push(Instruction::Call {
+                    target: Function::External(builtin),
+                    arguments: arg_locals,
+                    output: None,
+                });
+            }
+
+            for (local, typ, ownership) in args.into_iter() {
+                this.drop(local, typ, ownership);
+            }
+
+            Ok((builtin.is_none(), ()))
         })
     }
 
@@ -1142,6 +1234,32 @@ impl<S: Sink> Context<'_, S> {
         types: &[Type],
         output: Option<Local>,
     ) -> Semantic<()> {
+        let allocs = self.alloc_expecting(at, args, types)?;
+        let arg_locals = allocs.iter().map(|(local, _, _)| *local).collect();
+
+        self.sink.push(Instruction::Call {
+            target: Function::External(builtin),
+            arguments: arg_locals,
+            output,
+        });
+
+        for (local, typ, ownership) in allocs.into_iter() {
+            self.drop(local, typ, ownership);
+            self.sink.free_local(local);
+        }
+
+        Ok(())
+    }
+
+    fn alloc_expecting<A>(
+        &mut self,
+        at: &Location,
+        args: &[A],
+        types: &[Type],
+    ) -> Semantic<Vec<(Local, Type, Ownership)>>
+    where
+        A: Borrow<Located<parse::Expr>>,
+    {
         if args.len() != types.len() {
             return Err(Located::at(
                 SemanticError::BadArgumentCount(types.len(), args.len()),
@@ -1149,34 +1267,15 @@ impl<S: Sink> Context<'_, S> {
             ));
         }
 
-        let mut arg_locals = Vec::new();
-        let mut ownerships = Vec::new();
-
-        for (arg, typ) in args.iter().copied().zip(types.iter()) {
+        let mut allocs = Vec::new();
+        for (arg, typ) in args.iter().map(Borrow::borrow).zip(types.iter()) {
             let local = self.sink.alloc_local();
             let ownership = self.eval_expecting(arg, local, *typ)?;
 
-            arg_locals.push(local);
-            ownerships.push(ownership);
+            allocs.push((local, *typ, ownership));
         }
 
-        self.sink.push(Instruction::Call {
-            target: Function::External(builtin),
-            arguments: arg_locals.clone(),
-            output,
-        });
-
-        let dropped = arg_locals
-            .into_iter()
-            .zip(ownerships.into_iter())
-            .zip(types.iter().cloned());
-
-        for ((local, ownership), typ) in dropped {
-            self.drop(local, typ, ownership);
-            self.sink.free_local(local);
-        }
-
-        Ok(())
+        Ok(allocs)
     }
 
     fn eval_owned(&mut self, expr: &Located<parse::Expr>, into: Local) -> Semantic<Type> {
