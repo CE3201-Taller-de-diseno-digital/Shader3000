@@ -1,0 +1,100 @@
+##Pruebas de operaciones matematicas
+PROCEDURE main() {
+
+##Sumas y restas
+	x = 1;
+	
+	y = 1;
+	
+	z = x + y;
+	
+	debug(z);
+	
+	a = z  - 1;
+	
+	debug(a);
+	
+	a = -5 - 5;
+	
+	debug(a);
+	
+	n = 2;
+	
+	n = n +1; 
+	
+	debug(n);
+	
+##Division
+	
+	uno = 1//1;
+	
+	debug(uno);
+	
+	num_int = 50//7;
+	
+	debug(num_int);
+	
+	num_float = 50/7;
+	
+	debug(num_float);
+	
+	dos = 2 / 1;
+	
+	debug(dos);
+	
+	b = 11 / 2; 
+	
+	debug(b);
+
+##Negacion
+	
+	x = -11;
+	
+	debug(x);
+
+##Multiplicacion
+
+	numerito = 7*7;
+	
+	debug(numerito);
+	
+	debug (4 * -4);
+	
+
+##Potencia
+	
+	debug(2**6);
+	
+	numero = 5**2;
+	
+	debug(numero);
+	
+	flout = 6**-2;
+	
+	debug(flout);
+
+##Modulo
+	
+	var = 10%5;
+	
+	debug(var);
+	
+	debug(11%7);
+	
+##Combinadas
+
+	eq1 = (5**2 + 5**2)**(1/2);
+	
+	eq2 = (10 + 10 )*2;
+	
+	eq3 = (11-1)* (5*10);
+	
+	eq4 = (10 + 5)/3 + (2**2+1/1) ;
+	
+	debug(eq1);
+	debug(eq2);
+	debug(eq3);
+	debug(eq4);
+	
+
+}

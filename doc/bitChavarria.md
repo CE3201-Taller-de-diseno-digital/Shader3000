@@ -153,6 +153,8 @@ url{https://wiki.gnome.org/Projects/GtkSourceView}
 
 ### 17 de junio
 
+- Funciones de pruebe en .led. Agregar keywords y modificar el tamaño de la fuente del editor
+
 ### 18 de junio
 
-
+- Documentación . Implementar 5 distintos themes para el editor todos para .led , agregar keyowords . Probar .led y crear casos de errores semanticos en .led
