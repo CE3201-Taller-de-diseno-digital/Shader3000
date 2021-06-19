@@ -5,10 +5,12 @@ use core::ops::{Index, IndexMut, Not};
 pub struct Display([[Light; 8]; 8]);
 
 impl Display {
+    #[allow(dead_code)]
     pub fn rows(&self) -> &[[Light; 8]; 8] {
         &self.0
     }
 
+    #[allow(dead_code)]
     pub fn row_bits(&self, row: usize) -> u8 {
         self.0[row]
             .iter()
@@ -50,6 +52,7 @@ pub struct Light {
 }
 
 impl Light {
+    #[allow(dead_code)]
     pub fn state(&self) -> State {
         self.state
     }

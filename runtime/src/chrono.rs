@@ -8,10 +8,12 @@ impl Ticks {
         Ticks(crate::sys::tick_count_for(duration))
     }
 
+    #[allow(dead_code)]
     pub fn done(self) -> bool {
         self.0 == 0
     }
 
+    #[allow(dead_code)]
     pub fn countdown(&mut self) {
         match self {
             Ticks(0) => (),
