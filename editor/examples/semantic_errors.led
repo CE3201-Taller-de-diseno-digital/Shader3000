@@ -1,0 +1,154 @@
+##Casos de prueba para error semantico
+
+procedure only_ints(num1 : int , num2 :Int){
+
+	
+
+}
+
+procedure only_lists(list1 : list , list2 :list){
+
+	
+
+}
+
+procedure foo(var:int){
+
+
+}
+
+
+
+##Semantic error: Entrypoint not found, define a parameterless `procedure main()`
+
+procedure main(){
+
+	x = 11;
+	
+	
+##Semantic error: This definition for `foo` is in conflict with a global variable
+
+	##foo = 2;
+
+
+##Semantic error: Mismatch in number of targets and values
+
+	##var1, var2, var3 = 0 , 11; 
+	
+	##var4 = 1 , 2 ;
+	
+##Semantic error: Type mismatch: expected `{0}`, found `{1}`
+
+	##var1 = 1 ;
+	
+	##var2 = [false,true];
+	
+	##var1 = true;
+	
+	##var2 = 1/34;
+	
+	
+	##NOT TESTED YET
+##Semantic error: Type mismatch: expected `{0}` or `{1}`, found `{2}`
+
+
+	
+##Semantic error: Type mismatch: expected `{0}`, `{1}` or `{2}`, found `{3}`
+
+	##for i in float(9){
+	
+	##}
+	
+##Semantic error: Expected variable, found procedure family `{0}`	
+	
+	##call only_ints(foo,2);
+	
+##Semantic error: Expected procedure, found variable `{0}`	
+	
+	##var1 = 0;
+	
+	##call var1;
+	
+##Semantic error: Symbol `{0}` is undefined
+	
+	##call hola();
+	
+	##var1 = algo;
+
+	
+##Semantic error: Procedure family `{0}` exists, but the overload `{0}({1})` is not defined
+	
+	##call foo(1,2,3,4);
+	
+	##call foo();
+	
+	##call only_ints(true,true);
+
+	##call only_ints(1);
+	
+	
+	
+##Semantic error: Invalid operands for `{0}`: `{1}` and `{2}`
+
+	##num = 1;
+	
+	##lista = [true,false];
+	
+	##var = lista + num;
+	
+	
+	##NOT TESTED YET
+##Semantic error: Expected {0} arguments, found {1}
+	
+	##lista = [true];
+	
+	##lista.delete(1);
+	
+	
+##Semantic error: Objects of type `{0}` have no attribute `{1}`
+
+	##lista = [].hola;
+
+
+
+	
+##Semantic error: Cannot cast `{0}` to `{1}`
+
+	##lista = [true];
+	
+	##var = float(lista);
+
+
+}
+
+
+##Semantic error: Redefinition of procedure `{0}` with the same parameter types
+
+	##procedure foo(var:int){}
+
+##Semantic error: Parameter `var` is bound more than once
+
+	##procedure foo2 (var:int , var: list){}
+	
+##Semantic error: This definition for `{0}` is in conflict with a global variable
+
+	##procedure foo2(){
+	
+		##main = 5 ;
+	##}
+
+## Semantic error: This global statement is in conflict with another symbol
+
+	##procedure foo2(){
+	
+		##x = 5;
+		
+	  	##global x;
+	  	
+	  	##x = 10;
+	  	
+	##}
+	
+	
+	
+

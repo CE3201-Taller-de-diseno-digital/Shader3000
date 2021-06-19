@@ -168,6 +168,7 @@ fn build_ui(application: &gtk::Application) {
             let term_buffer = terminal.get_buffer().unwrap();
             let mut bounds = term_buffer.get_bounds();
             term_buffer.insert(&mut bounds.1,&answer);
+            term_buffer.insert(&mut bounds.1,"\n");
 
         }),
     );
@@ -195,6 +196,7 @@ fn build_ui(application: &gtk::Application) {
 
        let mut bounds = term_buffer.get_bounds();
        term_buffer.insert(&mut bounds.1,&answer);
+       term_buffer.insert(&mut bounds.1,"\n");
 
     }));
 
@@ -309,7 +311,7 @@ fn build_ui(application: &gtk::Application) {
                                 let mut bounds = term_buffer.get_bounds();
                                 let mut saved_msg: String = "Successfully saved at: ".to_owned();
                                 saved_msg.push_str(&filename.as_str());
-                                saved_msg.push_str("\n");
+                                saved_msg.push_str("\n\n");
                                 term_buffer.insert(&mut bounds.1,&saved_msg);
                                 }
                 };
@@ -376,7 +378,7 @@ fn build_ui(application: &gtk::Application) {
                                      let mut bounds = term_buffer.get_bounds();
                                      let mut saved_msg: String = "Successfully saved at: ".to_owned();
                                      saved_msg.push_str(&name);
-                                     saved_msg.push_str("\n");
+                                     saved_msg.push_str("\n\n");
                                      term_buffer.insert(&mut bounds.1,&saved_msg);
                                     }
                 }

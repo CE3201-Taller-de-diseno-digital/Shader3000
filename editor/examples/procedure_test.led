@@ -14,11 +14,9 @@
 ##el código suficiente y necesario para realizar dicha
 ##animación.
 
+
 procedure main(){
 
-	##global rows;
-	
-	##global cols;
 	
 	rows , cols = 8,8;
 	
@@ -74,9 +72,9 @@ procedure dance(){
 
 }
 
-procedure OFF(){
+procedure off(){
 
-	off_mat =    [ [false,false,false,false,false,false,false,false],
+	off_mat =         [ [false,false,false,false,false,false,false,false],
 	
 				 [false,false,false,false,false,false,false,false],
 				 
@@ -95,9 +93,9 @@ procedure OFF(){
 	printledX("M",0,off_mat);
 }
 
-procedure ON(){
+procedure on(){
 
-	on_mat =    [ [true,true,true,true,true,true,true,true],
+	on_mat =         [ [true,true,true,true,true,true,true,true],
 	
 				 [true,true,true,true,true,true,true,true],
 				 
@@ -144,7 +142,7 @@ procedure stick_man(jumps:int, speed:int){
 	
 	call off();
 	
-	down =          [ [false,false,false,true,true,true,false,false],
+	down =            [ [false,false,false,true,true,true,false,false],
 	
 				 [false,false,false,true,true,true,false,false],
 				 
@@ -161,7 +159,7 @@ procedure stick_man(jumps:int, speed:int){
 				 [false,false,false,true,false,true,false,false] ];
 				 
 				 
-	up =              [ [false,false,false,true,true,true,false,false],
+	up =                [ [false,false,false,true,true,true,false,false],
 	
 				 [false,false,false,true,true,true,false,false],
 				 
@@ -288,7 +286,7 @@ Procedure anim(cycles:int ,speed:int){
 	
 	for i in cycles{
 	
-		frame1   =    [ [true,false,false,false,false,false,false,false],
+		frame1   =    [    [true,false,false,false,false,false,false,false],
 		
 					 [true,true,false,false,false,false,false,false],
 					 
@@ -306,7 +304,7 @@ Procedure anim(cycles:int ,speed:int){
 					 
 					 ##---------------------------------------------------------------
 					 
-		frame2 =      [ [true,true,true,true,true,true,true,true],
+		frame2 =      [    [true,true,true,true,true,true,true,true],
 		
 					 [true,true,true,true,true,true,true,false],
 					 
@@ -334,15 +332,15 @@ Procedure anim(cycles:int ,speed:int){
 		
 			for c in cols{
 			
-				frame1[f,c].Neg();
+				frame1[r,c].neg();
 				
-				frame2[f][c].Neg();
+				frame2[r][c].neg();
 				
 				if r == c {
 					
-					frame1[f,c]  = true;
+					frame1[r,c].t();
 				
-					frame2[f][c] = true;	
+					frame2[r][c] = true;	
 					
 				}
 			

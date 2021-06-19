@@ -1,0 +1,211 @@
+procedure main()
+{
+	rows , cols = 8,8;
+	
+	call off();
+	
+	
+	debug(1+2); 
+	
+	delay(1,"seg");
+	
+	call desc_to_m(true,false,200,50);
+	
+	call desc_frm_m(true,false,200,50);
+	
+	call desc_to_m(true,true,200,50);
+	
+	call desc_frm_m(true,true,200,50);
+	
+	delay(200,"mil");
+	
+	call desc_to_m(true,false,10,50);
+	
+	call desc_frm_m(true,false,10,50);
+	
+	delay(200,"mil");
+	
+	call desc_to_m(false,true,400,1);
+	
+	call desc_frm_m(false,true,400,1);
+	
+	delay(2,"seg");
+	
+	call anim(5,500);
+	
+	call anim(5,100);
+	
+}
+
+procedure off(){
+
+	off_mat =         [ [false,false,false,false,false,false,false,false],
+	
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false] ];
+	
+	printledX("M",0,off_mat);
+}
+
+##Descendent to middle
+##Enciende las diagonales descendentes empezando desde las
+##esquinas. 
+## Si top es true --> Enciende de la esquina SD al medio
+##Si top es false --> Enciende de la esquina IZ al medio
+##Speed: velocidad del delay en ms
+procedure desc_to_m(keep_OFF:bool , top:bool, line_speed: int ,ind_speed:int ){
+
+	this_row = rows-1;
+		
+	for i in rows {
+		
+		for j in i+1{
+			
+			row = this_row+j;
+			col   = j;
+				
+			if top{
+					
+				tmp = row;
+				row = col;
+				col = tmp;
+					
+			}
+				
+			printLed(row,col,true) ; 
+				
+			delay(ind_speed,"mil");
+				
+			if keep_OFF {
+				
+				printLed(row,col,false); 
+						
+			}
+				
+		}
+			
+		this_row = this_row-1;
+		
+		delay(line_speed,"mil");
+			
+	}
+
+}
+
+##Descendent from middle
+##Enciende las diagonales descendentes empezando desde la
+##mitad de la matriz. 
+## Si top es true --> Enciende del medio a la esquina IZ 
+##Si top es false --> Enciende del medio a la esquina SD
+procedure desc_frm_m(keep_OFF:bool,top:bool,line_speed: int ,ind_speed:int){
+
+	this_col = 0;
+	
+	for i in rows {
+	
+		for j in 8- i {
+		
+			row = j;
+			col   = this_col+j;
+			
+			if top {
+					
+				tmp = row;
+				row = col;
+				col = tmp;
+					
+			}
+			
+			printLed(row,col,true);  
+			
+			delay(ind_speed,"mil");
+				
+			if keep_OFF{
+				
+				printLed(row,col,false); 
+						
+			}
+		
+		}
+		
+		this_col = this_col +1;
+		
+		delay(line_speed,"mil");
+	
+	}
+	
+}
+
+
+
+Procedure anim(cycles:int ,speed:int){
+	
+	for i in cycles{
+	
+		frame1   =    [    [true,false,false,false,false,false,false,false],
+		
+					 [true,true,false,false,false,false,false,false],
+					 
+					 [true,true,true,false,false,false,false,false],
+					 
+					 [true,true,true,true,false,false,false,false],
+					 
+					 [true,true,true,true,true,false,false,false],
+					 
+					 [true,true,true,true,true,true,false,false],
+					 
+					 [true,true,true,true,true,true,true,false],
+					 
+					 [true,true,true,true,true,true,true,true] ];
+					 
+					 ##---------------------------------------------------------------
+					 
+		frame2 =      [    [true,true,true,true,true,true,true,true],
+		
+					 [true,true,true,true,true,true,true,false],
+					 
+					 [true,true,true,true,true,true,false,false],
+					 
+					 [true,true,true,true,true,false,false,false],
+					 
+					 [true,true,true,true,false,false,false,false],
+					 
+					 [true,true,true,false,false,false,false,false],
+					 
+					 [true,true,false,false,false,false,false,false],
+					 
+					 [true,false,false,false,false,false,false,false] ];
+	
+		printledX("M",0,frame1);
+		
+		delay(speed,"mil");
+		
+		printledX("M",0,frame2);
+		
+		delay(speed,"mil");
+		
+		printledX("M",0,frame1);
+		
+		delay(speed,"mil");
+		
+		printledX("M",0,frame2);
+		
+		delay(speed,"mil");
+		
+	}
+	
+	
+}
+
+

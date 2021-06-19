@@ -1,0 +1,80 @@
+procedure main(){
+
+	
+	rows , cols = 8,8;
+	
+	call on();
+	
+	delay(5,"seg");
+	
+	call one_by_one(true , 100);
+	
+	call one_by_one(false, 100);
+	
+	call one_by_one(true, 50);
+	
+}
+
+procedure off(){
+
+	off_mat =         [ [false,false,false,false,false,false,false,false],
+	
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false],
+				 
+				 [false,false,false,false,false,false,false,false] ];
+	
+	printledX("M",0,off_mat);
+}
+
+procedure on(){
+
+	on_mat =         [ [true,true,true,true,true,true,true,true],
+	
+				 [true,true,true,true,true,true,true,true],
+				 
+				 [true,true,true,true,true,true,true,true],
+				 
+				 [true,true,true,true,true,true,true,true],
+				 
+				 [true,true,true,true,true,true,true,true],
+				 
+				 [true,true,true,true,true,true,true,true],
+				 
+				 [true,true,true,true,true,true,true,true],
+				 
+				 [true,true,true,true,true,true,true,true] ];
+	
+	printledX("M",0,on_mat);
+}
+
+## Enciende todos los leds, uno por uno, por filas
+procedure one_by_one(keep_OFF: bool,speed:int){
+
+	call off();
+	
+	for i in rows {
+		
+		for j in cols {
+			
+			printLed(j,i,true);
+			
+			delay(speed,"mil");
+			
+			if keep_off {
+				printLed(j,i,false);
+			}
+		}
+	
+	}
+	
+}
