@@ -839,13 +839,17 @@ impl<S: Sink> Context<'_, S> {
             #[derive(Copy, Clone)]
             enum Method {
                 Insert,
+                Delete,
             }
 
             use Addressed::*;
             use Method::*;
 
-            const METHODS: &'static [(NoCase<&'static str>, Method)] =
-                &[(NoCase::new("insert"), Insert)];
+            const METHODS: &'static [(NoCase<&'static str>, Method)] = &[
+                (NoCase::new("insert"), Insert),
+                (NoCase::new("delete"), Delete),
+                (NoCase::new("del"), Delete),
+            ];
 
             let method = METHODS
                 .iter()
@@ -865,11 +869,14 @@ impl<S: Sink> Context<'_, S> {
                     (Some(builtin), types)
                 }
 
+                (Some(Delete), List) => (Some("builtin_delete_list"), &[Type::Int][..]),
+                (Some(Delete), Mat) => (Some("builtin_delete_mat"), &[Type::Int, Type::Int][..]),
+
                 _ => {
                     return Err(Located::at(
                         SemanticError::NoSuchMethod(name.as_ref().clone(), addressed),
                         name.location().clone(),
-                    ))
+                    ));
                 }
             };
 
