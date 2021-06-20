@@ -542,7 +542,7 @@ fn insert_in_mat(mat: &mut Mat, vectors: &[Rc<List>], mode: isize, index: usize)
                     column_count
                 );
 
-                mat.insert(index, item.clone());
+                mat.insert(index, Rc::new(List::clone(item)));
             }
 
             1 => {
