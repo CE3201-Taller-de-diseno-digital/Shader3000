@@ -27,6 +27,11 @@ use crate::{
 type List = Vec<bool>;
 type Mat = Vec<Rc<List>>;
 
+enum Orientation {
+    Rows,
+    Columns,
+}
+
 #[no_mangle]
 pub extern "C" fn builtin_debug(line: isize) {
     sys_debug!("[line {}] builtin_debug()", line);
@@ -161,12 +166,32 @@ pub extern "C" fn builtin_insert_mat(mat: *mut Mat, vectors: *mut Mat, mode: isi
 #[no_mangle]
 pub extern "C" fn builtin_insert_end_mat(mat: *mut Mat, vectors: *mut Mat, mode: isize) {
     let (mat, vectors) = unsafe { (&mut *mat, &*vectors) };
-    let length = match mode {
-        0 => shapef(mat),
-        _ => shapec(mat),
+    let length = match try_orientation(mode) {
+        Orientation::Rows => shapef(mat),
+        Orientation::Columns => shapec(mat),
     };
 
     insert_in_mat(mat, vectors, mode, length);
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_delete_list(list: *mut List, index: isize) {
+    let list = unsafe { &mut *list };
+    list.remove(try_usize(index));
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_delete_mat(mat: *mut Mat, index: isize, mode: isize) {
+    let mat = unsafe { &mut *mat };
+
+    let index = try_usize(index);
+    match try_orientation(mode) {
+        Orientation::Rows => drop(mat.remove(index)),
+        Orientation::Columns => mat.iter_mut().for_each(|row| {
+            let row = unsafe { Rc::get_mut_unchecked(row) };
+            row.remove(index);
+        }),
+    }
 }
 
 #[no_mangle]
@@ -532,8 +557,8 @@ fn insert_in_mat(mat: &mut Mat, vectors: &[Rc<List>], mode: isize, index: usize)
     let mut corrected_rows = false;
 
     for item in vectors.iter().rev() {
-        match mode {
-            0 => {
+        match try_orientation(mode) {
+            Orientation::Rows => {
                 assert!(
                     row_count == 0 || column_count == item.len(),
                     "attempted to insert row of length {} in {}x{} matrix",
@@ -545,7 +570,7 @@ fn insert_in_mat(mat: &mut Mat, vectors: &[Rc<List>], mode: isize, index: usize)
                 mat.insert(index, Rc::new(List::clone(item)));
             }
 
-            1 => {
+            Orientation::Columns => {
                 assert!(
                     row_count == 0 || row_count == item.len(),
                     "attempted to insert column of length {} in {}x{} matrix",
@@ -564,8 +589,14 @@ fn insert_in_mat(mat: &mut Mat, vectors: &[Rc<List>], mode: isize, index: usize)
                     row_list.insert(index, entry);
                 }
             }
-
-            _ => panic!("bad matrix insertion mode: {}", mode),
         }
+    }
+}
+
+fn try_orientation(mode: isize) -> Orientation {
+    match mode {
+        0 => Orientation::Rows,
+        1 => Orientation::Columns,
+        _ => panic!("bad matrix insertion mode: {}", mode),
     }
 }
