@@ -44,7 +44,7 @@ macro_rules! sys_debug {
             use xtensa_lx::mutex::Mutex;
 
             (&crate::esp8266::SERIAL).lock(|ser| {
-                write!(ser.as_mut().unwrap(), $($b)*).unwrap();
+                writeln!(ser.as_mut().unwrap(), $($b)*).unwrap();
             });
         }
     }
