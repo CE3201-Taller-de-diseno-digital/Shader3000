@@ -25,7 +25,12 @@ use crate::{
 };
 
 type List = Vec<bool>;
-type Mat = Vec<Rc<Vec<bool>>>;
+type Mat = Vec<Rc<List>>;
+
+enum Orientation {
+    Rows,
+    Columns,
+}
 
 #[no_mangle]
 pub extern "C" fn builtin_debug(line: isize) {
@@ -153,50 +158,48 @@ pub extern "C" fn builtin_insert_list(list: *mut List, index: isize, item: bool)
 }
 
 #[no_mangle]
-pub extern "C" fn builtin_insert_mat(mat: *mut Mat, item: *mut List, mode: isize, index: isize) {
+pub extern "C" fn builtin_insert_mat(mat: *mut Mat, vectors: *mut Mat, mode: isize, index: isize) {
+    let (mat, vectors) = unsafe { (&mut *mat, &*vectors) };
+    insert_in_mat(mat, vectors, mode, try_usize(index));
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_insert_end_mat(mat: *mut Mat, vectors: *mut Mat, mode: isize) {
+    let (mat, vectors) = unsafe { (&mut *mat, &*vectors) };
+    let length = match try_orientation(mode) {
+        Orientation::Rows => shapef(mat),
+        Orientation::Columns => shapec(mat),
+    };
+
+    insert_in_mat(mat, vectors, mode, length);
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_delete_list(list: *mut List, index: isize) {
+    let list = unsafe { &mut *list };
+    list.remove(try_usize(index));
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_delete_mat(mat: *mut Mat, index: isize, mode: isize) {
     let mat = unsafe { &mut *mat };
-    let original = unsafe { Rc::from_raw(item) };
-    let item = Rc::clone(&original);
-    Rc::into_raw(original);
 
     let index = try_usize(index);
-    let row_count = mat.len();
-    let column_count = mat.first().map(|first| first.len()).unwrap_or(0);
-
-    match mode {
-        0 => {
-            assert!(
-                row_count == 0 || column_count == item.len(),
-                "attempted to insert row of length {} in {}x{} matrix",
-                item.len(),
-                row_count,
-                column_count
-            );
-
-            mat.insert(index, item);
-        }
-
-        1 => {
-            assert!(
-                row_count == 0 || row_count == item.len(),
-                "attempted to insert column of length {} in {}x{} matrix",
-                item.len(),
-                row_count,
-                column_count
-            );
-
-            if row_count == 0 {
-                (0..item.len()).for_each(|_| mat.push(Rc::new(List::new())));
-            }
-
-            for (row_list, entry) in mat.iter_mut().zip(item.iter().copied()) {
-                let row_list = unsafe { Rc::get_mut_unchecked(row_list) };
-                row_list.insert(index, entry);
-            }
-        }
-
-        _ => panic!("bad matrix insertion mode: {}", mode),
+    match try_orientation(mode) {
+        Orientation::Rows => drop(mat.remove(index)),
+        Orientation::Columns => mat.iter_mut().for_each(|row| {
+            let row = unsafe { Rc::get_mut_unchecked(row) };
+            row.remove(index);
+        }),
     }
+}
+
+#[no_mangle]
+pub extern "C" fn builtin_push_mat(mat: *mut Mat, item: *mut List) {
+    let (mat, item) = unsafe { (&mut *mat, Rc::from_raw(item)) };
+
+    insert_in_mat(mat, core::slice::from_ref(&item), 0, mat.len());
+    Rc::into_raw(item);
 }
 
 #[no_mangle]
@@ -536,4 +539,64 @@ fn shapef(mat: &Mat) -> usize {
 
 fn shapec(mat: &Mat) -> usize {
     mat.first().map(|row| row.len()).unwrap_or(0)
+}
+
+fn insert_in_mat(mat: &mut Mat, vectors: &[Rc<List>], mode: isize, index: usize) {
+    // Formalmente, para este punto ya ocurrió UB si la condición de
+    // aserción es falsa, ya que significa una violación de las reglas
+    // de ownership y borrowing. Es posible que esto sea un probleam
+    // cuando rustc utilice el atributo noalias. La solución correcta
+    // es realizar esta verificación antes de dereferenciar ambos.
+    assert!(
+        mat.as_slice() as *const _ != vectors as *const _,
+        "attempted to insert matrix into itself"
+    );
+
+    let row_count = shapef(mat);
+    let column_count = shapec(mat);
+    let mut corrected_rows = false;
+
+    for item in vectors.iter().rev() {
+        match try_orientation(mode) {
+            Orientation::Rows => {
+                assert!(
+                    row_count == 0 || column_count == item.len(),
+                    "attempted to insert row of length {} in {}x{} matrix",
+                    item.len(),
+                    row_count,
+                    column_count
+                );
+
+                mat.insert(index, Rc::new(List::clone(item)));
+            }
+
+            Orientation::Columns => {
+                assert!(
+                    row_count == 0 || row_count == item.len(),
+                    "attempted to insert column of length {} in {}x{} matrix",
+                    item.len(),
+                    row_count,
+                    column_count
+                );
+
+                if row_count == 0 && !corrected_rows {
+                    (0..item.len()).for_each(|_| mat.push(Rc::new(List::new())));
+                    corrected_rows = true;
+                }
+
+                for (row_list, entry) in mat.iter_mut().zip(item.iter().copied()) {
+                    let row_list = unsafe { Rc::get_mut_unchecked(row_list) };
+                    row_list.insert(index, entry);
+                }
+            }
+        }
+    }
+}
+
+fn try_orientation(mode: isize) -> Orientation {
+    match mode {
+        0 => Orientation::Rows,
+        1 => Orientation::Columns,
+        _ => panic!("bad matrix insertion mode: {}", mode),
+    }
 }

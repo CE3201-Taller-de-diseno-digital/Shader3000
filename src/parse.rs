@@ -255,11 +255,11 @@ pub enum ParserError {
     #[error("Expected identifier, found {0}")]
     ExpectedId(Token),
 
-    #[error("Expected any of `if`, `for`, `call`, assignment, method call or built-in call")]
-    ExpectedStatement,
+    #[error("Expected start of statement, found {0}")]
+    ExpectedStatement(Token),
 
-    #[error("Expected any of `int`, `bool`, `list`, `mat`")]
-    ExpectedType,
+    #[error("Expected any of `int`, `bool`, `float`, `list`, `mat`, found {0}")]
+    ExpectedType(Token),
 
     #[error("Expected expression, found {0}")]
     ExpectedExpr(Token),
@@ -502,8 +502,8 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
             }
 
             _ => {
-                self.next()?;
-                self.fail(ParserError::ExpectedStatement).weak()
+                let bad = self.next()?.into_inner();
+                self.fail(ParserError::ExpectedStatement(bad)).weak()
             }
         }
     }
@@ -811,7 +811,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
                 Type::Of(Box::new(expr))
             }
 
-            _ => self.fail(ParserError::ExpectedType)?,
+            bad => self.fail(ParserError::ExpectedType(bad))?,
         };
 
         Ok(Located::at(typ, location))
