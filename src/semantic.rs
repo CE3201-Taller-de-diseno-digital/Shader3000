@@ -146,12 +146,12 @@ impl Display for Addressed {
             Addressed::List => write!(fmt, "type `{}`", Type::List),
             Addressed::Mat => write!(fmt, "type `{}`", Type::Mat),
             Addressed::Pod(typ) => write!(fmt, "type `{}`", typ),
-            Addressed::ListEntry(_) => fmt.write_str("list entry"),
-            Addressed::MatEntry(_, _) => fmt.write_str("matrix entry"),
-            Addressed::MatRow(_) => fmt.write_str("matrix row"),
-            Addressed::MatColumn(_) => fmt.write_str("matrix column"),
-            Addressed::ListSlice(_, _) => fmt.write_str("list slice"),
-            Addressed::MatSlice(_, _) => fmt.write_str("matrix slice"),
+            Addressed::ListEntry(_) => fmt.write_str("list entries"),
+            Addressed::MatEntry(_, _) => fmt.write_str("matrix entries"),
+            Addressed::MatRow(_) => fmt.write_str("matrix rows"),
+            Addressed::MatColumn(_) => fmt.write_str("matrix columns"),
+            Addressed::ListSlice(_, _) => fmt.write_str("list slices"),
+            Addressed::MatSlice(_, _) => fmt.write_str("matrix slices"),
         }
     }
 }
@@ -309,7 +309,7 @@ pub enum SemanticError {
     #[error("Invalid addressing mode for base type `{0}`")]
     InvalidAddressing(Type),
 
-    #[error("Method `{0}` is undefined for {1} instances")]
+    #[error("Method `{0}` is undefined for {1}")]
     NoSuchMethod(Identifier, Addressed),
 
     #[error("Denominator expression is always zero")]
