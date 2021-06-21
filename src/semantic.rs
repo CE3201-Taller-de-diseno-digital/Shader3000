@@ -309,6 +309,9 @@ pub enum SemanticError {
 
     #[error("This denominator expression is always zero")]
     DivisionByZero,
+
+    #[error("This parameter must be `0` or `1`, but was proven to always be `{0}`")]
+    ExpectedMatMode(i32),
 }
 
 impl parse::Ast {
@@ -903,6 +906,16 @@ impl<S: Sink> Context<'_, S> {
                 }};
             }
 
+            let check_mat_mode = |this: &Self, expr| match this.const_eval(expr) {
+                Some(Static::Int(0 | 1)) => Ok(()),
+                Some(Static::Int(mode)) => Err(Located::at(
+                    SemanticError::ExpectedMatMode(mode),
+                    expr.location().clone(),
+                )),
+
+                _ => Ok(()),
+            };
+
             let method = METHODS
                 .iter()
                 .find(|(key, _)| key == name.as_ref())
@@ -918,11 +931,21 @@ impl<S: Sink> Context<'_, S> {
                         ("builtin_insert_end_mat", &[Type::Mat, Type::Int][..])
                     };
 
+                    if let Some(mode) = args.get(1) {
+                        check_mat_mode(this, mode)?;
+                    }
+
                     (Some(builtin), types)
                 }
 
                 (Some(Delete), List) => (Some("builtin_delete_list"), &[Type::Int][..]),
-                (Some(Delete), Mat) => (Some("builtin_delete_mat"), &[Type::Int, Type::Int][..]),
+                (Some(Delete), Mat) => {
+                    if let Some(mode) = args.get(1) {
+                        check_mat_mode(this, mode)?;
+                    }
+
+                    (Some("builtin_delete_mat"), &[Type::Int, Type::Int][..])
+                }
 
                 (Some(Neg), Pod(Type::Bool)) => {
                     this.sink.push(Instruction::Not(base));
