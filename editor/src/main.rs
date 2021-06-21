@@ -162,7 +162,8 @@ fn build_ui(application: &gtk::Application) {
 
             let filename: &str = &current_file.get_text();
 
-            let cmd = Command::new("./compiler").args(&[filename,"-o","exe","--target","esp8266"]).output().unwrap();
+            let cmd = Command::new("./compiler").args(&[filename, "-svo","exe","--target","esp8266"]).output().unwrap();
+
             let answer = std::str::from_utf8(&cmd.stderr).unwrap();
 
             let term_buffer = terminal.get_buffer().unwrap();
