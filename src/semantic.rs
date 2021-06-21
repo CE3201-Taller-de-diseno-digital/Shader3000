@@ -18,6 +18,7 @@ use crate::{
 struct SymbolTable<'a> {
     outer: Option<&'a SymbolTable<'a>>,
     symbols: HashMap<Identifier, Named>,
+    statics: HashMap<Identifier, Static>,
     lifted: HashSet<Identifier>,
 }
 
@@ -59,6 +60,10 @@ impl SymbolTable<'_> {
                 },
             }
         }
+    }
+
+    fn lookup_static(&self, id: &Identifier) -> Option<Static> {
+        self.statics.get(id).copied()
     }
 }
 
@@ -319,7 +324,8 @@ pub enum SemanticError {
 
 impl parse::Ast {
     pub fn resolve(self) -> Semantic<ir::Program> {
-        let global_scope = self.scan_global_scope()?;
+        let mut global_scope = self.scan_global_scope()?;
+        let mut global_statics = Some(std::mem::take(&mut global_scope.statics));
 
         let code = self
             .iter()
@@ -336,14 +342,19 @@ impl parse::Ast {
                     is_toplevel: Default::default(),
                 };
 
-                let symbol = context.scan_procedure(procedure)?;
-                if procedure.is_entrypoint() {
-                    context.drop_globals(&global_scope);
+                let is_main = procedure.is_entrypoint();
+                if is_main {
+                    context.scope.statics = global_statics.take().unwrap_or_default();
+                }
+
+                let (mut sink, symbol) = context.scan_procedure(procedure)?;
+                if is_main {
+                    drop_globals(&mut sink, &global_scope);
                 }
 
                 Ok(ir::GeneratedFunction {
                     name: symbol,
-                    body: context.sink.body,
+                    body: sink.body,
                     parameters,
                 })
             })
@@ -397,6 +408,9 @@ impl parse::Ast {
                     };
 
                     context.scope.symbols.insert(id.clone(), Named::Var(var));
+                    if let Some(static_init) = context.const_eval(value) {
+                        context.scope.statics.insert(id.clone(), static_init);
+                    }
                 }
             }
         }
@@ -452,36 +466,35 @@ struct Context<'a, S: Sink> {
 }
 
 impl<S: Sink> Context<'_, S> {
-    fn scan_procedure(&mut self, procedure: &parse::Procedure) -> Semantic<Rc<String>> {
+    fn scan_procedure(mut self, procedure: &parse::Procedure) -> Semantic<(S, Rc<String>)> {
         let types = self.parameter_types(procedure)?;
 
-        self.subscope(|this| {
-            this.is_toplevel = true;
+        self.is_toplevel = true;
 
-            let parameters = procedure.parameters().iter();
-            for (i, (parameter, typ)) in parameters.zip(types.iter().copied()).enumerate() {
-                let name = parameter.name();
-                let var = Named::Var(Variable {
-                    access: Access::Local(Local(i as u32)),
-                    typ,
-                });
+        let parameters = procedure.parameters().iter();
+        for (i, (parameter, typ)) in parameters.zip(types.iter().copied()).enumerate() {
+            let name = parameter.name();
+            let var = Named::Var(Variable {
+                access: Access::Local(Local(i as u32)),
+                typ,
+            });
 
-                let id = name.as_ref().clone();
-                if this.scope.symbols.insert(id, var).is_some() {
-                    return Err(Located::at(
-                        SemanticError::RepeatedParameter(name.as_ref().clone()),
-                        name.location().clone(),
-                    ));
-                }
+            let id = name.as_ref().clone();
+            if self.scope.symbols.insert(id, var).is_some() {
+                return Err(Located::at(
+                    SemanticError::RepeatedParameter(name.as_ref().clone()),
+                    name.location().clone(),
+                ));
             }
-
-            this.scan_statements(procedure.statements())
-        })?;
-
-        match self.scope.lookup(procedure.name()) {
-            Ok(Named::Procs { variants }) => Ok(variants.get(&types).unwrap().clone()),
-            _ => unreachable!(),
         }
+
+        let symbol = match self.scope.lookup(procedure.name()) {
+            Ok(Named::Procs { variants }) => variants.get(&types).unwrap().clone(),
+            _ => unreachable!(),
+        };
+
+        self.scan_statements(procedure.statements())?;
+        Ok((self.expire(), symbol))
     }
 
     fn scan_statements(&mut self, statements: &[parse::Statement]) -> Semantic<()> {
@@ -925,27 +938,61 @@ impl<S: Sink> Context<'_, S> {
                 .map(|(_, method)| *method);
 
             let (builtin, arg_types) = match (method, addressed) {
-                (Some(Insert), List) => (Some("builtin_insert_list"), &[Type::Int, Type::Bool][..]),
+                (Some(Insert), List) => {
+                    this.update_static(target.var(), |_, old| match old {
+                        Static::List { length } => Some(Static::List { length: length + 1 }),
+                        _ => None,
+                    });
+
+                    (Some("builtin_insert_list"), &[Type::Int, Type::Bool][..])
+                }
 
                 (Some(Insert), Mat) => {
+                    if let Some(mode) = args.get(1) {
+                        check_mat_mode(this, mode)?;
+                    }
+
+                    this.update_static(target.var(), |_, old| match old {
+                        Static::Mat { rows, columns } => Some(Static::Mat {
+                            rows: rows + 1,
+                            columns,
+                        }),
+
+                        _ => None,
+                    });
+
                     let (builtin, types) = if args.len() >= 3 {
                         ("builtin_insert_mat", &[Type::Mat, Type::Int, Type::Int][..])
                     } else {
                         ("builtin_insert_end_mat", &[Type::Mat, Type::Int][..])
                     };
 
-                    if let Some(mode) = args.get(1) {
-                        check_mat_mode(this, mode)?;
-                    }
-
                     (Some(builtin), types)
                 }
 
-                (Some(Delete), List) => (Some("builtin_delete_list"), &[Type::Int][..]),
+                (Some(Delete), List) => {
+                    this.update_static(target.var(), |_, old| match old {
+                        Static::List { length } => Some(Static::List { length: length - 1 }),
+
+                        _ => None,
+                    });
+
+                    (Some("builtin_delete_list"), &[Type::Int][..])
+                }
+
                 (Some(Delete), Mat) => {
                     if let Some(mode) = args.get(1) {
                         check_mat_mode(this, mode)?;
                     }
+
+                    this.update_static(target.var(), |_, old| match old {
+                        Static::Mat { rows, columns } if rows > 0 => Some(Static::Mat {
+                            rows: rows - 1,
+                            columns,
+                        }),
+
+                        _ => None,
+                    });
 
                     (Some("builtin_delete_mat"), &[Type::Int, Type::Int][..])
                 }
@@ -1041,6 +1088,7 @@ impl<S: Sink> Context<'_, S> {
             self.sink.free_local(local);
         }
 
+        self.scope.statics.clear();
         Ok(())
     }
 
@@ -1112,6 +1160,10 @@ impl<S: Sink> Context<'_, S> {
                 });
 
                 self.scope.symbols.insert(target.as_ref().clone(), named);
+                if let Some(value) = self.const_eval(value) {
+                    self.scope.statics.insert(target.as_ref().clone(), value);
+                }
+
                 return Ok(());
             }
         };
@@ -1156,11 +1208,20 @@ impl<S: Sink> Context<'_, S> {
                         })?;
                     }
 
-                    this.sink
-                        .push(Instruction::StoreGlobal(value_local, global));
+                    let instruction = Instruction::StoreGlobal(value_local, global);
+                    this.sink.push(instruction);
+
                     Ok((Type::Int, Ownership::Owned, ()))
                 })?;
             }
+        }
+
+        let id = target.as_ref();
+        if self.scope.statics.get(id).is_some() {
+            match self.const_eval(value) {
+                Some(new) => self.scope.statics.insert(id.clone(), new),
+                None => self.scope.statics.remove(id),
+            };
         }
 
         Ok(())
@@ -1831,8 +1892,7 @@ impl<S: Sink> Context<'_, S> {
 
             if let Some(expected_columns) = expected_columns {
                 match self.const_eval(expr) {
-                    Some(Static::List { length }) if length == expected_columns => (),
-                    Some(Static::List { length }) => {
+                    Some(Static::List { length }) if length != expected_columns => {
                         return Err(Located::at(
                             SemanticError::ExpectedColumns(
                                 expected_columns as usize,
@@ -2001,7 +2061,7 @@ impl<S: Sink> Context<'_, S> {
             True => Some(Bool(true)),
             False => Some(Bool(false)),
             Integer(integer) => Some(Int(*integer)),
-            Read(_) => None, //TODO
+            Read(id) => self.scope.lookup_static(id),
 
             Attr(base, attr) => {
                 let (base, attr) = (self.const_eval(base)?, attr.as_ref().as_ref());
@@ -2151,6 +2211,19 @@ impl<S: Sink> Context<'_, S> {
         }
     }
 
+    fn update_static<F>(&mut self, id: &Located<Identifier>, updater: F)
+    where
+        F: FnOnce(&mut Self, Static) -> Option<Static>,
+    {
+        let id = id.as_ref();
+        if let Some(old) = self.scope.lookup_static(id) {
+            match updater(self, old) {
+                Some(new) => self.scope.statics.insert(id.clone(), new),
+                None => self.scope.statics.remove(id),
+            };
+        }
+    }
+
     fn expire(mut self) -> S {
         std::mem::take(&mut self.scope.symbols)
             .into_iter()
@@ -2173,6 +2246,8 @@ impl<S: Sink> Context<'_, S> {
     where
         F: FnOnce(&mut Context<'_, S>) -> R,
     {
+        self.scope.statics.clear();
+
         let sink = std::mem::take(&mut self.sink);
         let mut subcontext = Context {
             scope: SymbolTable {
@@ -2205,29 +2280,6 @@ impl<S: Sink> Context<'_, S> {
         Ok(result)
     }
 
-    fn drop_globals(&mut self, globals: &SymbolTable<'_>) {
-        for named in globals.symbols.values() {
-            if let Named::Var(Variable {
-                access: Access::Global(global),
-                typ,
-            }) = named
-            {
-                if let Some(destructor) = destructor(*typ, Ownership::Owned) {
-                    // Ya no quedan otras locales
-                    let local = Local::default();
-
-                    self.sink
-                        .push(Instruction::LoadGlobal(global.clone(), local));
-                    self.sink.push(Instruction::Call {
-                        target: Function::External(destructor),
-                        arguments: vec![local],
-                        output: None,
-                    });
-                }
-            }
-        }
-    }
-
     fn drop(&mut self, local: Local, typ: Type, ownership: Ownership) {
         if let Some(destructor) = destructor(typ, ownership) {
             self.sink.push(Instruction::Call {
@@ -2235,6 +2287,29 @@ impl<S: Sink> Context<'_, S> {
                 arguments: vec![local],
                 output: None,
             });
+        }
+    }
+}
+
+fn drop_globals<S: Sink>(sink: &mut S, globals: &SymbolTable<'_>) {
+    for named in globals.symbols.values() {
+        if let Named::Var(Variable {
+            access: Access::Global(global),
+            typ,
+        }) = named
+        {
+            if let Some(destructor) = destructor(*typ, Ownership::Owned) {
+                // Ya no quedan otras locales
+                let local = Local::default();
+                let load = Instruction::LoadGlobal(global.clone(), local);
+
+                sink.push(load);
+                sink.push(Instruction::Call {
+                    target: Function::External(destructor),
+                    arguments: vec![local],
+                    output: None,
+                });
+            }
         }
     }
 }
