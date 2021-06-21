@@ -306,6 +306,9 @@ pub enum SemanticError {
 
     #[error("Method `{0}` is undefined for {1} instances")]
     NoSuchMethod(Identifier, Addressed),
+
+    #[error("This denominator expression is always zero")]
+    DivisionByZero,
 }
 
 impl parse::Ast {
@@ -1563,6 +1566,15 @@ impl<S: Sink> Context<'_, S> {
             use parse::BinOp as ParseOp;
             use Type::*;
 
+            let expect_non_zero = |this: &Self, expr| match this.const_eval(expr) {
+                Some(Static::Int(0)) => Err(Located::at(
+                    SemanticError::DivisionByZero,
+                    expr.location().clone(),
+                )),
+
+                _ => Ok(()),
+            };
+
             let op = match (op, typ) {
                 (_, Float) => {
                     let typ = this.do_float_binary(at, into, op, rhs_local)?;
@@ -1572,8 +1584,16 @@ impl<S: Sink> Context<'_, S> {
                 (ParseOp::Add, Int) => IrOp::Arithmetic(ArithmeticOp::Add),
                 (ParseOp::Sub, Int) => IrOp::Arithmetic(ArithmeticOp::Sub),
                 (ParseOp::Mul, Int) => IrOp::Arithmetic(ArithmeticOp::Mul),
-                (ParseOp::Mod, Int) => IrOp::Arithmetic(ArithmeticOp::Mod),
-                (ParseOp::IntegerDiv, Int) => IrOp::Arithmetic(ArithmeticOp::Div),
+
+                (ParseOp::Mod, Int) => {
+                    expect_non_zero(this, rhs)?;
+                    IrOp::Arithmetic(ArithmeticOp::Mod)
+                }
+
+                (ParseOp::IntegerDiv, Int) => {
+                    expect_non_zero(this, rhs)?;
+                    IrOp::Arithmetic(ArithmeticOp::Div)
+                }
 
                 (ParseOp::Div, Int) => {
                     this.do_builtin_assign(into, "builtin_div_int", rhs_local);
