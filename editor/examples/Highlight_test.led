@@ -10,9 +10,9 @@ procedure main(){
 	
 	numero = 5 + 7 ;
 	
-	float = 1;
+	floante = float(1);
 	
-	var  = true; 
+	otravar  = true; 
 	
 	## !!!!! algo pasa con type(var);
 	
@@ -26,19 +26,19 @@ procedure main(){
 	
 	lista = [];
 	
-	L = [true , false , false];
+	l = [true , false , false];
 	
-	final = L[2];
+	final = l[2];
 	
-	sub_L = L[0:1];
+	sub_L = l[0:1];
 	
-	 ##prbRange = range(5, True);
+	prbRange = range(5, True);
 	
 	prbRange.delete(2);
 	
 	largo  = len(sub_L);
 	
-	L[0].neg();
+	l[0].neg();
 	
 	Blink(1,8,2,"seg",True);
 	
@@ -57,11 +57,11 @@ Procedure one_by_one(){
 
 	PrintLed(1,1,true);
 	
-	ListaX = [True, True, False, False, False, False, True, False];   ##soy un cometario
+	listaX = [True, True, False, False, False, False, True, False];   ##soy un cometario
 
-	printLedX("F", 2, ListaX);
+	printLedX("F", 2, listaX);
 	
-	PRINTLEDX( "C", 5, ListaX);
+	PRINTLEDX( "C", 5, listaX);
 	
 	x = [True, True, False, False, False, False, True, True, True, True,False];
 	
@@ -69,12 +69,12 @@ Procedure one_by_one(){
 	
 	for var1 IN x Step 2 {
 		
-		x[var1].Neg();
+		x[var1].neg();
 
 		}
-	For var1 in milista[1:3] {
+	For var1 in [true, false, true, true][1:3] {
 	
-		x[var1].Neg();
+		x[var1].neg();
 		
 		}
 
@@ -87,20 +87,20 @@ Procedure one_by_one(){
 	m=[[True,False,True],[True, True, True],[False,False,True]];
 	
 	
-	una_fila = M[0];
+	una_fila = m[0];
 	
 	un_bool = m[1][1];
 	
-	otro_bool = M[1,1]; ## Elemento en la fila 1 y columna 1
-	cosaaa = M[:,1] ;## Columna en el índice 1
+	otro_bool = m[1,1]; ## Elemento en la fila 1 y columna 1
+	cosaaa = m[:,1] ;## Columna en el índice 1
 	
-	## !!!!! algo pasa con filas = M.shapeF();                ## Devuelve el numero de Filas que posee la matriz
-	## !!!!! algo pasa con columnas = M.shapeC    ## Devuelve el numero de Columnas que posee la matriz
+	## !!!!! algo pasa con filas = m.shapeF();                ## Devuelve el numero de Filas que posee la matriz
+	## !!!!! algo pasa con columnas = m.shapeC    ## Devuelve el numero de Columnas que posee la matriz
 
 
-	M.insert([[True, False, True]], 0);
+	m.insert([[True, False, True]], 0);
 	
-	M.insert([[True, False, True]], 0,0);
+	m.insert([[True, False, True]], 0,0);
 	
 	
 	matriz2 = [[True , True , True ],
@@ -111,28 +111,30 @@ Procedure one_by_one(){
 
 	matriz2.delete(0,0);
 	
-	
+	filas = matriz2.shapef;
+	columnas = matriz2.shapec;
+
 	for i in filas
 	{
 		for j in columnas
 		{
-			Matriz2[i, j].Neg;
+			matriz2[i, j].neg;
 		}
 	}
 	
-	MIVARIABLE  =  5; 
+	miVARIABLE  =  5; 
 	
-	If MiVariable == 5
+	If mIVariable == 5
 	{
 		## Escribir el cuerpo del IF
 	}
 	
-	If M[:, 1] == True
+	If m[:, 1] == True
 	{
 	
 	}
 	
-	call opetations();
+	call operations();
 	
 	call operations(10);
 
