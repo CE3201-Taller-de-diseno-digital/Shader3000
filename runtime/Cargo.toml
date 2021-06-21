@@ -26,3 +26,6 @@ micromath = "2.0.0"
 [build-dependencies]
 cc = "1.0.67"
 nix = "0.20.0"
+
+[dependencies]
+paste = "1.0.5"

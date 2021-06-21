@@ -17,6 +17,7 @@ use core::{convert::TryInto, iter, ops::Deref};
 
 #[cfg(target_arch = "xtensa")]
 use micromath::F32Ext;
+use paste::paste;
 
 use crate::{
     chrono::{Duration, Ticks},
@@ -26,6 +27,42 @@ use crate::{
 
 type List = Vec<bool>;
 type Mat = Vec<Rc<List>>;
+
+trait Tensor {
+    fn mutate_entries<F>(&mut self, mutator: F)
+    where
+        F: Fn(&mut bool);
+}
+
+impl Tensor for bool {
+    fn mutate_entries<F>(&mut self, mutator: F)
+    where
+        F: Fn(&mut bool),
+    {
+        mutator(self);
+    }
+}
+
+impl Tensor for [bool] {
+    fn mutate_entries<F>(&mut self, mutator: F)
+    where
+        F: FnMut(&mut bool),
+    {
+        self.iter_mut().for_each(mutator);
+    }
+}
+
+impl Tensor for [Rc<List>] {
+    fn mutate_entries<F>(&mut self, mutator: F)
+    where
+        F: Fn(&mut bool),
+    {
+        self.iter_mut().for_each(|row| {
+            let row = unsafe { Rc::get_mut_unchecked(row) };
+            row.mutate_entries(&mutator);
+        });
+    }
+}
 
 enum Orientation {
     Rows,
@@ -377,16 +414,78 @@ pub extern "C" fn builtin_pow_float(a: isize, b: isize) -> isize {
 pub extern "C" fn builtin_cmp_float(a: isize, b: isize) -> isize {
     use core::cmp::Ordering::*;
 
-    //FIXME
     match f32_from_ffi(a)
         .partial_cmp(&f32_from_ffi(b))
-        .unwrap_or(Greater)
+        .unwrap_or(Greater) //FIXME
     {
         Less => -1,
         Equal => 0,
         Greater => 1,
     }
 }
+
+macro_rules! mutator {
+    ($op:literal, $mutator:expr) => {
+        paste! {
+            #[no_mangle]
+            pub fn [<builtin_ $op _list>](list: *mut List) {
+                unsafe { &mut *list }.mutate_entries($mutator);
+            }
+
+            #[no_mangle]
+            pub fn [<builtin_ $op _mat>](mat: *mut Mat) {
+                unsafe { &mut *mat }.mutate_entries($mutator);
+            }
+
+            #[no_mangle]
+            pub fn [<builtin_ $op _entry_list>](list: *mut List, index: isize) {
+                let entry = &mut unsafe { &mut *list }[try_usize(index)];
+                entry.mutate_entries($mutator);
+            }
+
+            #[no_mangle]
+            pub fn [<builtin_ $op _entry_mat>](mat: *mut Mat, row: isize, column: isize) {
+                let row = &mut unsafe { &mut *mat }[try_usize(row)];
+                let row = unsafe { Rc::get_mut_unchecked(row) };
+                (&mut row[try_usize(column)]).mutate_entries($mutator);
+            }
+
+            #[no_mangle]
+            pub fn [<builtin_ $op _row_mat>](mat: *mut Mat, row: isize) {
+                let row = &mut unsafe { &mut *mat }[try_usize(row)];
+                let row = unsafe { Rc::get_mut_unchecked(row) };
+                row.mutate_entries($mutator);
+            }
+
+            #[no_mangle]
+            pub fn [<builtin_ $op _column_mat>](mat: *mut Mat, column: isize) {
+                let mat = unsafe { &mut *mat };
+                let column = try_usize(column);
+
+                for row in mat.iter_mut() {
+                    let row = unsafe { Rc::get_mut_unchecked(row) };
+                    (&mut row[column]).mutate_entries($mutator);
+                }
+            }
+
+            #[no_mangle]
+            pub fn [<builtin_ $op _slice_list>](list: *mut List, from: isize, to: isize) {
+                let range = &mut unsafe { &mut *list }[try_usize(from)..try_usize(to)];
+                range.mutate_entries($mutator);
+            }
+
+            #[no_mangle]
+            pub fn [<builtin_ $op _slice_mat>](mat: *mut Mat, from: isize, to: isize) {
+                let range = &mut unsafe { &mut *mat }[try_usize(from)..try_usize(to)];
+                range.mutate_entries($mutator);
+            }
+        }
+    };
+}
+
+mutator!("neg", |entry| *entry = !*entry);
+mutator!("f", |entry| *entry = false);
+mutator!("t", |entry| *entry = true);
 
 /// Detiene el programa por una cantidad de milisegundos.
 #[no_mangle]
