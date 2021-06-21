@@ -267,8 +267,8 @@ pub enum ParserError {
     #[error("Expected operator, found {0}")]
     ExpectedOperator(Token),
 
-    #[error("Expected option")]
-    ExpectedOption,
+    #[error("Expected one of {0}")]
+    ExpectedOption(String),
 
     #[error("Missing type annotation for procedure parameter")]
     MissingParameterType,
@@ -668,6 +668,15 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
     where
         T: Copy,
     {
+        let error_string = || {
+            let as_literals: Vec<_> = options
+                .iter()
+                .map(|(key, _)| format!("\"{}\"", key))
+                .collect();
+
+            as_literals.join(", ")
+        };
+
         match self.next()?.into_inner() {
             Token::StrLiteral(literal) => {
                 let value = options
@@ -678,11 +687,11 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
                 if let Some(value) = value {
                     Ok(*value)
                 } else {
-                    self.fail(ParserError::ExpectedOption)
+                    self.fail(ParserError::ExpectedOption(error_string()))
                 }
             }
 
-            _ => self.fail(ParserError::ExpectedOption),
+            _ => self.fail(ParserError::ExpectedOption(error_string())),
         }
     }
 
