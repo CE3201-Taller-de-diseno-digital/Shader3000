@@ -5,10 +5,12 @@
 
 use anyhow::{self, bail, Context};
 use clap::{self, crate_version, Arg};
+
 use std::{
     fs::File,
     io::{BufRead, BufReader},
     str::FromStr,
+    time::Instant,
 };
 
 use compiler::{
@@ -46,6 +48,12 @@ fn main() -> anyhow::Result<()> {
         )
         .arg(Arg::new("strip").short('s').about("Strip executables"))
         .arg(
+            Arg::new("verbose")
+                .short('v')
+                .long("verbose")
+                .about("Report compilation statistics"),
+        )
+        .arg(
             Arg::new("output")
                 .short('o')
                 .takes_value(true)
@@ -65,10 +73,10 @@ fn main() -> anyhow::Result<()> {
     let platform = args.value_of("target").unwrap();
     let platform = Platform::from_str(&platform).expect("main.rs allowed a bad target");
     let arch = platform.arch();
-    let asm = args.is_present("asm");
-    let ir = args.is_present("ir");
     let output = args.value_of("output").unwrap();
     let input = args.value_of("input").unwrap();
+
+    let start_time = Instant::now();
 
     // Lexer->parser->magia
     let program = match input {
@@ -99,12 +107,12 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    if ir {
+    if args.is_present("ir") {
         dump_ir(&program);
         return Ok(());
     }
 
-    match (asm, output) {
+    match (args.is_present("asm"), output) {
         // Salida a stdout sin enlazado
         (true, "-") => {
             let mut stdout = std::io::stdout();
@@ -139,6 +147,11 @@ fn main() -> anyhow::Result<()> {
                 .with_context(|| format!("Failed to generate executable: {}", path))?;
         }
     };
+
+    if args.is_present("verbose") {
+        let duration = Instant::now().duration_since(start_time).as_secs_f32();
+        eprintln!("Finished successful build in {:.03}s", duration);
+    }
 
     Ok(())
 }
