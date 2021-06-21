@@ -279,7 +279,7 @@ pub enum SemanticError {
     #[error("Symbol `{0}` is undefined")]
     Undefined(Identifier),
 
-    #[error("This definition for `{0}` is in conflict with a global variable")]
+    #[error("Definition for `{0}` is in conflict with a global variable")]
     NameClash(Identifier),
 
     #[error("Redefinition of procedure `{0}` with the same parameter types")]
@@ -312,7 +312,7 @@ pub enum SemanticError {
     #[error("Method `{0}` is undefined for {1} instances")]
     NoSuchMethod(Identifier, Addressed),
 
-    #[error("This denominator expression is always zero")]
+    #[error("Denominator expression is always zero")]
     DivisionByZero,
 
     #[error("This parameter must be `0` or `1`, but was proven to always be `{0}`")]
@@ -320,6 +320,9 @@ pub enum SemanticError {
 
     #[error("Expected `{0}` columns, found `{1}`")]
     ExpectedColumns(usize, usize),
+
+    #[error("Index always evaluates to `{0}`, outside of bounds `[0, {1}{2}`")]
+    OutOfBounds(i32, i32, char),
 }
 
 impl parse::Ast {
@@ -1294,8 +1297,14 @@ impl<S: Sink> Context<'_, S> {
             Ok(constructor(first_local, second_local))
         };
 
+        let mut static_value = self.scope.statics.get(target.var().as_ref()).copied();
+
         for index in target.indices().iter() {
             use parse::Index;
+
+            static_value = static_value
+                .and_then(|value| self.check_index(value, index).transpose())
+                .transpose()?;
 
             addressed = match (addressed, index.as_ref()) {
                 (List, Index::Single(expr)) => single(self, first, expr, &ListEntry)?,
@@ -1985,7 +1994,6 @@ impl<S: Sink> Context<'_, S> {
         use parse::Index;
 
         let base_type = self.type_check(base)?;
-
         let expect_mat = || {
             (base_type == Type::Mat).then(|| ()).ok_or_else(|| {
                 Located::at(
@@ -2050,6 +2058,10 @@ impl<S: Sink> Context<'_, S> {
         let location = index.location();
         self.eval_fixed_call(builtin, location, &args, types, Some(into))?;
 
+        self.const_eval(base)
+            .and_then(|base| self.check_index(base, index).transpose())
+            .transpose()?;
+
         Ok(typ)
     }
 
@@ -2086,7 +2098,7 @@ impl<S: Sink> Context<'_, S> {
                             (Int(from), Int(to))
                                 if from >= 0 && to >= 0 && from < length && to <= length =>
                             {
-                                Some(Int(to - from + 1))
+                                Some(List { length: to - from })
                             }
 
                             _ => None,
@@ -2100,7 +2112,7 @@ impl<S: Sink> Context<'_, S> {
                                 if from >= 0 && to >= 0 && from < rows && to <= rows =>
                             {
                                 Some(Mat {
-                                    rows: to - from + 1,
+                                    rows: to - from,
                                     columns,
                                 })
                             }
@@ -2120,7 +2132,9 @@ impl<S: Sink> Context<'_, S> {
             },
 
             Range(length, _) => match self.const_eval(length)? {
-                Int(length) => Some(Int(length)),
+                Int(length) => Some(List {
+                    length: length.max(0),
+                }),
                 _ => None,
             },
 
@@ -2209,6 +2223,85 @@ impl<S: Sink> Context<'_, S> {
                 }
             }
         }
+    }
+
+    fn check_index(&self, base: Static, index: &Located<parse::Index>) -> Semantic<Option<Static>> {
+        use parse::Index;
+        use Static::*;
+
+        let check = |length, index| match self.const_eval(index) {
+            Some(Int(value)) if (0..length).contains(&value) => Ok(Some(value)),
+            Some(Int(value)) => Err(Located::at(
+                SemanticError::OutOfBounds(value, length, '['),
+                index.location().clone(),
+            )),
+
+            _ => Ok(None),
+        };
+
+        let check_range = |length, from, to| {
+            let from_value = check(length, from);
+            let to_value = match self.const_eval(to) {
+                Some(Int(to_value)) if (0..=length).contains(&to_value) => Some(to_value),
+
+                Some(Int(value)) => {
+                    return Err(Located::at(
+                        SemanticError::OutOfBounds(value, length, ']'),
+                        to.location().clone(),
+                    ))
+                }
+
+                _ => None,
+            };
+
+            match (from_value, to_value) {
+                (Err(error), _) => Err(error),
+                (Ok(Some(from)), Some(to)) => Ok(Some(to - from)),
+                (Ok(_), _) => Ok(None),
+            }
+        };
+
+        match (base, index.as_ref()) {
+            (List { length }, Index::Single(index)) => {
+                check(length, index)?;
+            }
+
+            (List { length }, Index::Range(from, to)) => {
+                if let Some(slice_length) = check_range(length, from, to)? {
+                    return Ok(Some(List {
+                        length: slice_length,
+                    }));
+                }
+            }
+
+            (Mat { rows, columns }, Index::Single(index)) => {
+                check(rows, index)?;
+                return Ok(Some(List { length: columns }));
+            }
+
+            (Mat { rows, columns }, Index::Range(from, to)) => {
+                if let Some(slice_rows) = check_range(rows, from, to)? {
+                    return Ok(Some(Mat {
+                        rows: slice_rows,
+                        columns,
+                    }));
+                }
+            }
+
+            (Mat { rows, columns }, Index::Indirect(first, second)) => {
+                check(rows, first)?;
+                check(columns, second)?;
+            }
+
+            (Mat { rows, columns }, Index::Transposed(index)) => {
+                check(columns, index)?;
+                return Ok(Some(List { length: rows }));
+            }
+
+            _ => (),
+        }
+
+        Ok(None)
     }
 
     fn update_static<F>(&mut self, id: &Located<Identifier>, updater: F)
