@@ -1,9 +1,10 @@
+use thiserror::Error;
+
 use std::{
     fmt::{self, Display},
     iter::Peekable,
     marker::PhantomData,
 };
-use thiserror::Error;
 
 use crate::{
     lex::{Identifier, Keyword, NoCase, Token},

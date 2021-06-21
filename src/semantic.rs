@@ -151,6 +151,15 @@ impl Display for Addressed {
     }
 }
 
+#[derive(Copy, Clone)]
+enum Static {
+    Int(i32),
+    Bool(bool),
+    Float(f32),
+    List { length: i32 },
+    Mat { rows: i32, columns: i32 },
+}
+
 trait Sink: Default {
     fn push(&mut self, instruction: Instruction);
 
@@ -1912,6 +1921,164 @@ impl<S: Sink> Context<'_, S> {
         self.eval_fixed_call(builtin, location, &args, types, Some(into))?;
 
         Ok(typ)
+    }
+
+    fn const_eval(&self, expr: &Located<parse::Expr>) -> Option<Static> {
+        use parse::Expr::{self, *};
+        use Static::{List, *};
+
+        match expr.as_ref() {
+            True => Some(Bool(true)),
+            False => Some(Bool(false)),
+            Integer(integer) => Some(Int(*integer)),
+            Read(_) => None, //TODO
+
+            Attr(base, attr) => {
+                let (base, attr) = (self.const_eval(base)?, attr.as_ref().as_ref());
+                match (base, attr) {
+                    (Mat { rows, .. }, attr) if attr == "shapeF" => Some(Int(rows)),
+                    (Mat { columns, .. }, attr) if attr == "shapeC" => Some(Int(columns)),
+                    _ => None,
+                }
+            }
+
+            Index(base, index) => {
+                use parse::Index::*;
+
+                let (base, index) = (self.const_eval(base)?, index.as_ref().as_ref());
+                match (base, index) {
+                    (Mat { columns, .. }, Single(_)) => Some(List { length: columns }),
+                    (Mat { rows, .. }, Transposed(_)) => Some(List { length: rows }),
+
+                    (List { length }, Range(from, to)) => {
+                        let (from, to) = (self.const_eval(from)?, self.const_eval(to)?);
+                        match (from, to) {
+                            (Int(from), Int(to))
+                                if from >= 0 && to >= 0 && from < length && to <= length =>
+                            {
+                                Some(Int(to - from + 1))
+                            }
+
+                            _ => None,
+                        }
+                    }
+
+                    (Mat { rows, columns }, Range(from, to)) => {
+                        let (from, to) = (self.const_eval(from)?, self.const_eval(to)?);
+                        match (from, to) {
+                            (Int(from), Int(to))
+                                if from >= 0 && to >= 0 && from < rows && to <= rows =>
+                            {
+                                Some(Mat {
+                                    rows: to - from + 1,
+                                    columns,
+                                })
+                            }
+
+                            _ => None,
+                        }
+                    }
+
+                    _ => None,
+                }
+            }
+
+            Len(expr) => match self.const_eval(expr)? {
+                List { length } => Some(Int(length)),
+                Mat { rows, .. } => Some(Int(rows)),
+                _ => None,
+            },
+
+            Range(length, _) => match self.const_eval(length)? {
+                Int(length) => Some(Int(length)),
+                _ => None,
+            },
+
+            Expr::List(items) => match items.first().map(|first| self.type_check(first)) {
+                None => Some(List { length: 0 }),
+                Some(Ok(Type::Bool)) => Some(List {
+                    length: items.len() as i32,
+                }),
+                Some(Ok(Type::List)) => match self.const_eval(items.first().unwrap())? {
+                    List { length } => Some(Mat {
+                        rows: items.len() as i32,
+                        columns: length,
+                    }),
+                    _ => None,
+                },
+
+                Some(_) => None,
+            },
+
+            New(typ) => match self.scan_type(typ) {
+                Ok(Type::Bool) => Some(Bool(false)),
+                Ok(Type::Int) => Some(Int(0)),
+                Ok(Type::Float) => Some(Float(0.0)),
+                Ok(Type::List) => Some(List { length: 0 }),
+                Ok(Type::Mat) => Some(Mat {
+                    rows: 0,
+                    columns: 0,
+                }),
+                Err(_) => None,
+            },
+
+            Cast(typ, expr) => match (self.const_eval(expr)?, self.scan_type(typ)) {
+                (Bool(boolean), Ok(Type::Bool)) => Some(Bool(boolean)),
+                (Int(integer), Ok(Type::Int)) => Some(Int(integer)),
+                (Float(float), Ok(Type::Float)) => Some(Float(float)),
+                (list @ List { .. }, Ok(Type::List)) => Some(list),
+                (mat @ Mat { .. }, Ok(Type::Mat)) => Some(mat),
+
+                (Bool(boolean), Ok(Type::Int)) => Some(Int(boolean as i32)),
+                (Int(integer), Ok(Type::Bool)) => Some(Bool(integer != 0)),
+                (Int(integer), Ok(Type::Float)) => Some(Float(integer as f32)),
+                (Float(float), Ok(Type::Int)) => Some(Int(float as i32)),
+
+                _ => None,
+            },
+
+            Negate(expr) => match self.const_eval(expr)? {
+                Int(integer) => Some(Int(-integer)),
+                _ => None,
+            },
+
+            Binary { lhs, op, rhs, .. } => {
+                use parse::BinOp::*;
+
+                match (self.const_eval(lhs)?, op, self.const_eval(rhs)?) {
+                    (Bool(lhs), Equal, Bool(rhs)) => Some(Bool(lhs == rhs)),
+                    (Bool(lhs), NotEqual, Bool(rhs)) => Some(Bool(lhs != rhs)),
+
+                    (Int(lhs), Add, Int(rhs)) => Some(Int(lhs + rhs)),
+                    (Int(lhs), Sub, Int(rhs)) => Some(Int(lhs - rhs)),
+                    (Int(lhs), Mul, Int(rhs)) => Some(Int(lhs * rhs)),
+                    (Int(lhs), Pow, Int(rhs)) => Some(Float((lhs as f32).powf(rhs as f32))),
+                    (Int(lhs), Div, Int(rhs)) => Some(Float(lhs as f32 / rhs as f32)),
+                    (Int(lhs), Mod, Int(rhs)) if rhs != 0 => Some(Int(lhs % rhs)),
+                    (Int(lhs), IntegerDiv, Int(rhs)) if rhs != 0 => Some(Int(lhs / rhs)),
+                    (Int(lhs), Equal, Int(rhs)) if rhs != 0 => Some(Bool(lhs == rhs)),
+                    (Int(lhs), NotEqual, Int(rhs)) if rhs != 0 => Some(Bool(lhs != rhs)),
+                    (Int(lhs), Greater, Int(rhs)) if rhs != 0 => Some(Bool(lhs > rhs)),
+                    (Int(lhs), GreaterOrEqual, Int(rhs)) if rhs != 0 => Some(Bool(lhs >= rhs)),
+                    (Int(lhs), Less, Int(rhs)) if rhs != 0 => Some(Bool(lhs < rhs)),
+                    (Int(lhs), LessOrEqual, Int(rhs)) if rhs != 0 => Some(Bool(lhs <= rhs)),
+
+                    (Float(lhs), Add, Float(rhs)) => Some(Float(lhs + rhs)),
+                    (Float(lhs), Sub, Float(rhs)) => Some(Float(lhs - rhs)),
+                    (Float(lhs), Mul, Float(rhs)) => Some(Float(lhs * rhs)),
+                    (Float(lhs), Pow, Float(rhs)) => Some(Float(lhs.powf(rhs))),
+                    (Float(lhs), Div, Float(rhs)) => Some(Float(lhs / rhs)),
+                    (Float(lhs), Equal, Float(rhs)) => Some(Bool(lhs == rhs)),
+                    (Float(lhs), NotEqual, Float(rhs)) => Some(Bool(lhs != rhs)),
+                    (Float(lhs), Greater, Float(rhs)) => Some(Bool(lhs > rhs)),
+                    (Float(lhs), GreaterOrEqual, Float(rhs)) => Some(Bool(lhs >= rhs)),
+                    (Float(lhs), Less, Float(rhs)) => Some(Bool(lhs < rhs)),
+                    (Float(lhs), LessOrEqual, Float(rhs)) => Some(Bool(lhs <= rhs)),
+
+                    _ => None,
+                }
+            }
+        }
     }
 
     fn expire(mut self) -> S {
