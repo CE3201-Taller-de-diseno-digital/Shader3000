@@ -840,6 +840,9 @@ impl<S: Sink> Context<'_, S> {
             enum Method {
                 Insert,
                 Delete,
+                Neg,
+                F,
+                T,
             }
 
             use Addressed::*;
@@ -849,7 +852,44 @@ impl<S: Sink> Context<'_, S> {
                 (NoCase::new("insert"), Insert),
                 (NoCase::new("delete"), Delete),
                 (NoCase::new("del"), Delete),
+                (NoCase::new("neg"), Neg),
+                (NoCase::new("f"), F),
+                (NoCase::new("t"), T),
             ];
+
+            let mut arg_locals = vec![base];
+            match addressed {
+                List | Mat | Pod(_) => (),
+                ListEntry(local) | MatRow(local) | MatColumn(local) => arg_locals.push(local),
+                MatEntry(from, to) | ListSlice(from, to) | MatSlice(from, to) => {
+                    arg_locals.push(from);
+                    arg_locals.push(to);
+                }
+            }
+
+            macro_rules! mutator {
+                ($op:literal) => {{
+                    let builtin = match addressed {
+                        List => concat!("builtin_", $op, "_list"),
+                        Mat => concat!("builtin_", $op, "_mat"),
+                        ListEntry(_) => concat!("builtin_", $op, "_entry_list"),
+                        MatEntry(_, _) => concat!("builtin_", $op, "_entry_mat"),
+                        MatRow(_) => concat!("builtin_", $op, "_row_mat"),
+                        MatColumn(_) => concat!("builtin_", $op, "_column_mat"),
+                        ListSlice(_, _) => concat!("builtin_", $op, "_slice_list"),
+                        MatSlice(_, _) => concat!("builtin_", $op, "_slice_mat"),
+
+                        Pod(_) => {
+                            return Err(Located::at(
+                                SemanticError::NoSuchMethod(name.as_ref().clone(), addressed),
+                                name.location().clone(),
+                            ));
+                        }
+                    };
+
+                    (Some(builtin), &[][..])
+                }};
+            }
 
             let method = METHODS
                 .iter()
@@ -872,6 +912,25 @@ impl<S: Sink> Context<'_, S> {
                 (Some(Delete), List) => (Some("builtin_delete_list"), &[Type::Int][..]),
                 (Some(Delete), Mat) => (Some("builtin_delete_mat"), &[Type::Int, Type::Int][..]),
 
+                (Some(Neg), Pod(Type::Bool)) => {
+                    this.sink.push(Instruction::Not(base));
+                    (None, &[][..])
+                }
+
+                (Some(F), Pod(Type::Bool)) => {
+                    this.sink.push(Instruction::LoadConst(0, base));
+                    (None, &[][..])
+                }
+
+                (Some(T), Pod(Type::Bool)) => {
+                    this.sink.push(Instruction::LoadConst(1, base));
+                    (None, &[][..])
+                }
+
+                (Some(Neg), _) => mutator!("neg"),
+                (Some(F), _) => mutator!("f"),
+                (Some(T), _) => mutator!("t"),
+
                 _ => {
                     return Err(Located::at(
                         SemanticError::NoSuchMethod(name.as_ref().clone(), addressed),
@@ -882,9 +941,7 @@ impl<S: Sink> Context<'_, S> {
 
             let args = this.alloc_expecting(name.location(), args, arg_types)?;
             if let Some(builtin) = builtin {
-                let arg_locals = std::iter::once(base)
-                    .chain(args.iter().map(|(local, _, _)| *local))
-                    .collect();
+                arg_locals.extend(args.iter().map(|(local, _, _)| *local));
 
                 this.sink.push(Instruction::Call {
                     target: Function::External(builtin),
