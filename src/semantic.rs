@@ -312,6 +312,9 @@ pub enum SemanticError {
 
     #[error("This parameter must be `0` or `1`, but was proven to always be `{0}`")]
     ExpectedMatMode(i32),
+
+    #[error("Expected `{0}` columns, found `{1}`")]
+    ExpectedColumns(usize, usize),
 }
 
 impl parse::Ast {
@@ -1772,12 +1775,19 @@ impl<S: Sink> Context<'_, S> {
     fn eval_sequence(&mut self, items: &[Located<parse::Expr>], into: Local) -> Semantic<Type> {
         let item = self.sink.alloc_local();
 
-        let is_mat = match items.first() {
-            None => false,
+        let (is_mat, expected_columns) = match items.first() {
+            None => (false, None),
 
             Some(first) => match self.type_check(first)? {
-                Type::Bool => false,
-                Type::List => true,
+                Type::Bool => (false, None),
+                Type::List => {
+                    let columns = match self.const_eval(first) {
+                        Some(Static::List { length }) => Some(length),
+                        _ => None,
+                    };
+
+                    (true, columns)
+                }
 
                 bad => {
                     return Err(Located::at(
@@ -1818,6 +1828,23 @@ impl<S: Sink> Context<'_, S> {
             });
 
             self.drop(item, expected, ownership);
+
+            if let Some(expected_columns) = expected_columns {
+                match self.const_eval(expr) {
+                    Some(Static::List { length }) if length == expected_columns => (),
+                    Some(Static::List { length }) => {
+                        return Err(Located::at(
+                            SemanticError::ExpectedColumns(
+                                expected_columns as usize,
+                                length as usize,
+                            ),
+                            expr.location().clone(),
+                        ));
+                    }
+
+                    _ => (),
+                }
+            }
         }
 
         self.sink.free_local(index);
