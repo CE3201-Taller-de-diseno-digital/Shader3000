@@ -334,7 +334,7 @@ fn build_ui(application: &gtk::Application) {
     save_as.connect_activate(clone!(@weak window => move |_| {
 
         let file_chooser = gtk::FileChooserDialog::new(
-            Some("Open File"),
+            Some("Save File"),
             Some(&window),
             gtk::FileChooserAction::Save,
         );

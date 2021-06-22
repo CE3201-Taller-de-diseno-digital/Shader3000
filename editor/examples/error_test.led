@@ -1,0 +1,53 @@
+##Archivo para probar los mensajes de error:
+
+##1Error semantico si una variable cambia de tipo
+## 2Error si se accede a un indice de lista que no existe, genera error semantico
+##3Error de .Neg
+##4Blink con Rango diferente
+##5Delay con Rango diferente
+##6Printledx con tipo distinto error de sintaxis
+##7Matriz.insert  con un tipo diferente
+##8Matriz.insert no corresponde a la dimension de la matriz
+##9Matriz.delete con tipo diferente
+##10Matriz.delete con indice que no existe
+## 11Error de sintaxis sin ;
+##12Procedimiento con la misma firma
+##13Inconsistencia de parametros
+##14Falta una expresion
+##15 Falta tipo en un parametro
+
+##16 Identificador con mayuscula
+##17Integer overflow
+##18Max caracteres en identificador
+##19Cadena sin cerrar
+##20
+procedure main()
+{
+	x= 5;
+	##x= true;##1
+	lista = [true, true, false, false, true, true, false, false];
+	matriz= [[false,false,false],[false,false,false],[false,false,false]];
+	###lista[10] = true;##2
+	##no se##3
+	##blink(2,2,100,"no",True);##4
+	##delay(1000,"no") ;##5
+	##printledx("NO", 0,[[false,false,false],[false,false,false],[false,false,false]]);##6
+	##matriz.insert([true,true,true],2);##7
+	###matriz.insert([true,true,true,true],0);##8
+	###matriz.delete(0,2);##9
+	###matriz.delete(10,0);##10
+	##x=4##11
+	##call test(1);##13
+	##12;##14
+	##No = 5;##16
+	##no =999999999999999999999999999999999;##17
+	##aaaaaaaaaaaaaaaaaaaaaaaaaaaaaahhhh=2;##18
+	##delay(500,"mil) ;##19
+	
+	
+	
+}
+procedure test(){}
+##procedure test(){}##12
+procedure test(m:mat){}
+##procedure test(m){}##15
