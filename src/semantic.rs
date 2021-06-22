@@ -925,14 +925,60 @@ impl<S: Sink> Context<'_, S> {
                 }};
             }
 
-            let check_mat_mode = |this: &Self, expr| match this.const_eval(expr) {
-                Some(Static::Int(0 | 1)) => Ok(()),
-                Some(Static::Int(mode)) => Err(Located::at(
-                    SemanticError::ExpectedMatMode(mode),
-                    expr.location().clone(),
-                )),
+            let check_mat_mode = |this: &Self, number| {
+                let expr = match args.get(number) {
+                    Some(expr) => expr,
+                    None => return Ok(None),
+                };
 
-                _ => Ok(()),
+                match this.const_eval(expr) {
+                    Some(Static::Int(0)) => Ok(Some(false)),
+                    Some(Static::Int(1)) => Ok(Some(true)),
+                    Some(Static::Int(mode)) => Err(Located::at(
+                        SemanticError::ExpectedMatMode(mode),
+                        expr.location().clone(),
+                    )),
+
+                    _ => Ok(None),
+                }
+            };
+
+            let static_base = this.scope.statics.get(target.var()).copied();
+            let check_index_arg = |this: &mut Self, number, transpose, allow_one_past| {
+                if let Some(index) = args.get(number) {
+                    let static_index = this.const_eval(index);
+                    let check = |length, value| {
+                        let (limit, end_char) = if allow_one_past {
+                            (length + 1, ']')
+                        } else {
+                            (length, '[')
+                        };
+
+                        if (0..limit).contains(&value) {
+                            Ok(())
+                        } else {
+                            Err(Located::at(
+                                SemanticError::OutOfBounds(value, length, end_char),
+                                index.location().clone(),
+                            ))
+                        }
+                    };
+
+                    match (static_base, static_index) {
+                        (Some(Static::List { length }), Some(Static::Int(value))) => {
+                            check(length, value)?;
+                        }
+
+                        (Some(Static::Mat { rows, columns }), Some(Static::Int(value))) => {
+                            let limit = if transpose { columns } else { rows };
+                            check(limit, value)?;
+                        }
+
+                        _ => (),
+                    }
+                }
+
+                Ok(())
             };
 
             let method = METHODS
@@ -942,6 +988,8 @@ impl<S: Sink> Context<'_, S> {
 
             let (builtin, arg_types) = match (method, addressed) {
                 (Some(Insert), List) => {
+                    check_index_arg(this, 0, false, true)?;
+
                     this.update_static(target.var(), |_, old| match old {
                         Static::List { length } => Some(Static::List { length: length + 1 }),
                         _ => None,
@@ -951,8 +999,8 @@ impl<S: Sink> Context<'_, S> {
                 }
 
                 (Some(Insert), Mat) => {
-                    if let Some(mode) = args.get(1) {
-                        check_mat_mode(this, mode)?;
+                    if let Some(is_column) = check_mat_mode(this, 1)? {
+                        check_index_arg(this, 2, is_column, true)?;
                     }
 
                     this.update_static(target.var(), |_, old| match old {
@@ -974,9 +1022,9 @@ impl<S: Sink> Context<'_, S> {
                 }
 
                 (Some(Delete), List) => {
+                    check_index_arg(this, 0, false, false)?;
                     this.update_static(target.var(), |_, old| match old {
                         Static::List { length } => Some(Static::List { length: length - 1 }),
-
                         _ => None,
                     });
 
@@ -984,8 +1032,8 @@ impl<S: Sink> Context<'_, S> {
                 }
 
                 (Some(Delete), Mat) => {
-                    if let Some(mode) = args.get(1) {
-                        check_mat_mode(this, mode)?;
+                    if let Some(is_column) = check_mat_mode(this, 1)? {
+                        check_index_arg(this, 0, is_column, false)?;
                     }
 
                     this.update_static(target.var(), |_, old| match old {
