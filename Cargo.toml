@@ -6,7 +6,7 @@ default-members = [".", "runtime", "editor"]
 
 [package]
 name = "compiler"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2018"
 license-file = "LICENSE"
 authors = ["Alejandro Soto <alejandro@34project.org>",
