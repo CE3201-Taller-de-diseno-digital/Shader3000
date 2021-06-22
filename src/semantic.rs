@@ -18,6 +18,7 @@ use crate::{
 struct SymbolTable<'a> {
     outer: Option<&'a SymbolTable<'a>>,
     symbols: HashMap<Identifier, Named>,
+    statics: HashMap<Identifier, Static>,
     lifted: HashSet<Identifier>,
 }
 
@@ -59,6 +60,10 @@ impl SymbolTable<'_> {
                 },
             }
         }
+    }
+
+    fn lookup_static(&self, id: &Identifier) -> Option<Static> {
+        self.statics.get(id).copied()
     }
 }
 
@@ -141,12 +146,12 @@ impl Display for Addressed {
             Addressed::List => write!(fmt, "type `{}`", Type::List),
             Addressed::Mat => write!(fmt, "type `{}`", Type::Mat),
             Addressed::Pod(typ) => write!(fmt, "type `{}`", typ),
-            Addressed::ListEntry(_) => fmt.write_str("list entry"),
-            Addressed::MatEntry(_, _) => fmt.write_str("matrix entry"),
-            Addressed::MatRow(_) => fmt.write_str("matrix row"),
-            Addressed::MatColumn(_) => fmt.write_str("matrix column"),
-            Addressed::ListSlice(_, _) => fmt.write_str("list slice"),
-            Addressed::MatSlice(_, _) => fmt.write_str("matrix slice"),
+            Addressed::ListEntry(_) => fmt.write_str("list entries"),
+            Addressed::MatEntry(_, _) => fmt.write_str("matrix entries"),
+            Addressed::MatRow(_) => fmt.write_str("matrix rows"),
+            Addressed::MatColumn(_) => fmt.write_str("matrix columns"),
+            Addressed::ListSlice(_, _) => fmt.write_str("list slices"),
+            Addressed::MatSlice(_, _) => fmt.write_str("matrix slices"),
         }
     }
 }
@@ -274,7 +279,7 @@ pub enum SemanticError {
     #[error("Symbol `{0}` is undefined")]
     Undefined(Identifier),
 
-    #[error("This definition for `{0}` is in conflict with a global variable")]
+    #[error("Definition for `{0}` is in conflict with a global variable")]
     NameClash(Identifier),
 
     #[error("Redefinition of procedure `{0}` with the same parameter types")]
@@ -304,22 +309,29 @@ pub enum SemanticError {
     #[error("Invalid addressing mode for base type `{0}`")]
     InvalidAddressing(Type),
 
-    #[error("Method `{0}` is undefined for {1} instances")]
+    #[error("Method `{0}` is undefined for {1}")]
     NoSuchMethod(Identifier, Addressed),
 
-    #[error("This denominator expression is always zero")]
+    #[error("Denominator expression is always zero")]
     DivisionByZero,
 
     #[error("This parameter must be `0` or `1`, but was proven to always be `{0}`")]
     ExpectedMatMode(i32),
 
+    #[error("Expected `{0}` rows, found `{1}`")]
+    ExpectedRows(usize, usize),
+
     #[error("Expected `{0}` columns, found `{1}`")]
     ExpectedColumns(usize, usize),
+
+    #[error("Index always evaluates to `{0}`, outside of bounds `[0, {1}{2}`")]
+    OutOfBounds(i32, i32, char),
 }
 
 impl parse::Ast {
     pub fn resolve(self) -> Semantic<ir::Program> {
-        let global_scope = self.scan_global_scope()?;
+        let mut global_scope = self.scan_global_scope()?;
+        let mut global_statics = Some(std::mem::take(&mut global_scope.statics));
 
         let code = self
             .iter()
@@ -336,14 +348,19 @@ impl parse::Ast {
                     is_toplevel: Default::default(),
                 };
 
-                let symbol = context.scan_procedure(procedure)?;
-                if procedure.is_entrypoint() {
-                    context.drop_globals(&global_scope);
+                let is_main = procedure.is_entrypoint();
+                if is_main {
+                    context.scope.statics = global_statics.take().unwrap_or_default();
+                }
+
+                let (mut sink, symbol) = context.scan_procedure(procedure)?;
+                if is_main {
+                    drop_globals(&mut sink, &global_scope);
                 }
 
                 Ok(ir::GeneratedFunction {
                     name: symbol,
-                    body: context.sink.body,
+                    body: sink.body,
                     parameters,
                 })
             })
@@ -397,6 +414,9 @@ impl parse::Ast {
                     };
 
                     context.scope.symbols.insert(id.clone(), Named::Var(var));
+                    if let Some(static_init) = context.const_eval(value) {
+                        context.scope.statics.insert(id.clone(), static_init);
+                    }
                 }
             }
         }
@@ -452,36 +472,35 @@ struct Context<'a, S: Sink> {
 }
 
 impl<S: Sink> Context<'_, S> {
-    fn scan_procedure(&mut self, procedure: &parse::Procedure) -> Semantic<Rc<String>> {
+    fn scan_procedure(mut self, procedure: &parse::Procedure) -> Semantic<(S, Rc<String>)> {
         let types = self.parameter_types(procedure)?;
 
-        self.subscope(|this| {
-            this.is_toplevel = true;
+        self.is_toplevel = true;
 
-            let parameters = procedure.parameters().iter();
-            for (i, (parameter, typ)) in parameters.zip(types.iter().copied()).enumerate() {
-                let name = parameter.name();
-                let var = Named::Var(Variable {
-                    access: Access::Local(Local(i as u32)),
-                    typ,
-                });
+        let parameters = procedure.parameters().iter();
+        for (i, (parameter, typ)) in parameters.zip(types.iter().copied()).enumerate() {
+            let name = parameter.name();
+            let var = Named::Var(Variable {
+                access: Access::Local(Local(i as u32)),
+                typ,
+            });
 
-                let id = name.as_ref().clone();
-                if this.scope.symbols.insert(id, var).is_some() {
-                    return Err(Located::at(
-                        SemanticError::RepeatedParameter(name.as_ref().clone()),
-                        name.location().clone(),
-                    ));
-                }
+            let id = name.as_ref().clone();
+            if self.scope.symbols.insert(id, var).is_some() {
+                return Err(Located::at(
+                    SemanticError::RepeatedParameter(name.as_ref().clone()),
+                    name.location().clone(),
+                ));
             }
-
-            this.scan_statements(procedure.statements())
-        })?;
-
-        match self.scope.lookup(procedure.name()) {
-            Ok(Named::Procs { variants }) => Ok(variants.get(&types).unwrap().clone()),
-            _ => unreachable!(),
         }
+
+        let symbol = match self.scope.lookup(procedure.name()) {
+            Ok(Named::Procs { variants }) => variants.get(&types).unwrap().clone(),
+            _ => unreachable!(),
+        };
+
+        self.scan_statements(procedure.statements())?;
+        Ok((self.expire(), symbol))
     }
 
     fn scan_statements(&mut self, statements: &[parse::Statement]) -> Semantic<()> {
@@ -909,14 +928,60 @@ impl<S: Sink> Context<'_, S> {
                 }};
             }
 
-            let check_mat_mode = |this: &Self, expr| match this.const_eval(expr) {
-                Some(Static::Int(0 | 1)) => Ok(()),
-                Some(Static::Int(mode)) => Err(Located::at(
-                    SemanticError::ExpectedMatMode(mode),
-                    expr.location().clone(),
-                )),
+            let check_mat_mode = |this: &Self, number| {
+                let expr = match args.get(number) {
+                    Some(expr) => expr,
+                    None => return Ok(None),
+                };
 
-                _ => Ok(()),
+                match this.const_eval(expr) {
+                    Some(Static::Int(0)) => Ok(Some(false)),
+                    Some(Static::Int(1)) => Ok(Some(true)),
+                    Some(Static::Int(mode)) => Err(Located::at(
+                        SemanticError::ExpectedMatMode(mode),
+                        expr.location().clone(),
+                    )),
+
+                    _ => Ok(None),
+                }
+            };
+
+            let static_base = this.scope.statics.get(target.var()).copied();
+            let check_index_arg = |this: &mut Self, number, transpose, allow_one_past| {
+                if let Some(index) = args.get(number) {
+                    let static_index = this.const_eval(index);
+                    let check = |length, value| {
+                        let (limit, end_char) = if allow_one_past {
+                            (length + 1, ']')
+                        } else {
+                            (length, '[')
+                        };
+
+                        if (0..limit).contains(&value) {
+                            Ok(())
+                        } else {
+                            Err(Located::at(
+                                SemanticError::OutOfBounds(value, length, end_char),
+                                index.location().clone(),
+                            ))
+                        }
+                    };
+
+                    match (static_base, static_index) {
+                        (Some(Static::List { length }), Some(Static::Int(value))) => {
+                            check(length, value)?;
+                        }
+
+                        (Some(Static::Mat { rows, columns }), Some(Static::Int(value))) => {
+                            let limit = if transpose { columns } else { rows };
+                            check(limit, value)?;
+                        }
+
+                        _ => (),
+                    }
+                }
+
+                Ok(())
             };
 
             let method = METHODS
@@ -925,27 +990,104 @@ impl<S: Sink> Context<'_, S> {
                 .map(|(_, method)| *method);
 
             let (builtin, arg_types) = match (method, addressed) {
-                (Some(Insert), List) => (Some("builtin_insert_list"), &[Type::Int, Type::Bool][..]),
+                (Some(Insert), List) => {
+                    check_index_arg(this, 0, false, true)?;
+
+                    this.update_static(target.var(), |_, old| match old {
+                        Static::List { length } => Some(Static::List { length: length + 1 }),
+                        _ => None,
+                    });
+
+                    (Some("builtin_insert_list"), &[Type::Int, Type::Bool][..])
+                }
 
                 (Some(Insert), Mat) => {
+                    if let Some(is_column) = check_mat_mode(this, 1)? {
+                        check_index_arg(this, 2, is_column, true)?;
+
+                        if let Some(inserted) = args.get(0) {
+                            match (is_column, static_base, this.const_eval(inserted)) {
+                                (
+                                    false,
+                                    Some(Static::Mat {
+                                        rows,
+                                        columns: expected,
+                                    }),
+                                    Some(Static::Mat { columns, .. }),
+                                ) => {
+                                    if rows > 0 && columns != expected {
+                                        return Err(Located::at(
+                                            SemanticError::ExpectedColumns(
+                                                expected as usize,
+                                                columns as usize,
+                                            ),
+                                            inserted.location().clone(),
+                                        ));
+                                    }
+                                }
+
+                                (
+                                    true,
+                                    Some(Static::Mat { rows: expected, .. }),
+                                    Some(Static::Mat { columns: rows, .. }),
+                                ) => {
+                                    if expected > 0 && rows != expected {
+                                        return Err(Located::at(
+                                            SemanticError::ExpectedRows(
+                                                expected as usize,
+                                                rows as usize,
+                                            ),
+                                            inserted.location().clone(),
+                                        ));
+                                    }
+                                }
+
+                                _ => (),
+                            }
+                        }
+                    }
+
+                    this.update_static(target.var(), |_, old| match old {
+                        Static::Mat { rows, columns } => Some(Static::Mat {
+                            rows: rows + 1,
+                            columns,
+                        }),
+
+                        _ => None,
+                    });
+
                     let (builtin, types) = if args.len() >= 3 {
                         ("builtin_insert_mat", &[Type::Mat, Type::Int, Type::Int][..])
                     } else {
                         ("builtin_insert_end_mat", &[Type::Mat, Type::Int][..])
                     };
 
-                    if let Some(mode) = args.get(1) {
-                        check_mat_mode(this, mode)?;
-                    }
-
                     (Some(builtin), types)
                 }
 
-                (Some(Delete), List) => (Some("builtin_delete_list"), &[Type::Int][..]),
+                (Some(Delete), List) => {
+                    check_index_arg(this, 0, false, false)?;
+                    this.update_static(target.var(), |_, old| match old {
+                        Static::List { length } => Some(Static::List { length: length - 1 }),
+                        _ => None,
+                    });
+
+                    (Some("builtin_delete_list"), &[Type::Int][..])
+                }
+
                 (Some(Delete), Mat) => {
-                    if let Some(mode) = args.get(1) {
-                        check_mat_mode(this, mode)?;
+                    if let Some(is_column) = check_mat_mode(this, 1)? {
+                        check_index_arg(this, 0, is_column, false)?;
                     }
+
+                    this.update_static(target.var(), |_, old| match old {
+                        Static::Mat { rows, columns } if rows > 0 => Some(Static::Mat {
+                            rows: rows - 1,
+                            columns,
+                        }),
+
+                        _ => None,
+                    });
 
                     (Some("builtin_delete_mat"), &[Type::Int, Type::Int][..])
                 }
@@ -1041,6 +1183,7 @@ impl<S: Sink> Context<'_, S> {
             self.sink.free_local(local);
         }
 
+        self.scope.statics.clear();
         Ok(())
     }
 
@@ -1112,6 +1255,10 @@ impl<S: Sink> Context<'_, S> {
                 });
 
                 self.scope.symbols.insert(target.as_ref().clone(), named);
+                if let Some(value) = self.const_eval(value) {
+                    self.scope.statics.insert(target.as_ref().clone(), value);
+                }
+
                 return Ok(());
             }
         };
@@ -1156,11 +1303,20 @@ impl<S: Sink> Context<'_, S> {
                         })?;
                     }
 
-                    this.sink
-                        .push(Instruction::StoreGlobal(value_local, global));
+                    let instruction = Instruction::StoreGlobal(value_local, global);
+                    this.sink.push(instruction);
+
                     Ok((Type::Int, Ownership::Owned, ()))
                 })?;
             }
+        }
+
+        let id = target.as_ref();
+        if self.scope.statics.get(id).is_some() {
+            match self.const_eval(value) {
+                Some(new) => self.scope.statics.insert(id.clone(), new),
+                None => self.scope.statics.remove(id),
+            };
         }
 
         Ok(())
@@ -1233,8 +1389,14 @@ impl<S: Sink> Context<'_, S> {
             Ok(constructor(first_local, second_local))
         };
 
+        let mut static_value = self.scope.statics.get(target.var().as_ref()).copied();
+
         for index in target.indices().iter() {
             use parse::Index;
+
+            static_value = static_value
+                .and_then(|value| self.check_index(value, index).transpose())
+                .transpose()?;
 
             addressed = match (addressed, index.as_ref()) {
                 (List, Index::Single(expr)) => single(self, first, expr, &ListEntry)?,
@@ -1831,8 +1993,7 @@ impl<S: Sink> Context<'_, S> {
 
             if let Some(expected_columns) = expected_columns {
                 match self.const_eval(expr) {
-                    Some(Static::List { length }) if length == expected_columns => (),
-                    Some(Static::List { length }) => {
+                    Some(Static::List { length }) if length != expected_columns => {
                         return Err(Located::at(
                             SemanticError::ExpectedColumns(
                                 expected_columns as usize,
@@ -1925,7 +2086,6 @@ impl<S: Sink> Context<'_, S> {
         use parse::Index;
 
         let base_type = self.type_check(base)?;
-
         let expect_mat = || {
             (base_type == Type::Mat).then(|| ()).ok_or_else(|| {
                 Located::at(
@@ -1990,6 +2150,10 @@ impl<S: Sink> Context<'_, S> {
         let location = index.location();
         self.eval_fixed_call(builtin, location, &args, types, Some(into))?;
 
+        self.const_eval(base)
+            .and_then(|base| self.check_index(base, index).transpose())
+            .transpose()?;
+
         Ok(typ)
     }
 
@@ -2001,7 +2165,7 @@ impl<S: Sink> Context<'_, S> {
             True => Some(Bool(true)),
             False => Some(Bool(false)),
             Integer(integer) => Some(Int(*integer)),
-            Read(_) => None, //TODO
+            Read(id) => self.scope.lookup_static(id),
 
             Attr(base, attr) => {
                 let (base, attr) = (self.const_eval(base)?, attr.as_ref().as_ref());
@@ -2026,7 +2190,7 @@ impl<S: Sink> Context<'_, S> {
                             (Int(from), Int(to))
                                 if from >= 0 && to >= 0 && from < length && to <= length =>
                             {
-                                Some(Int(to - from + 1))
+                                Some(List { length: to - from })
                             }
 
                             _ => None,
@@ -2040,7 +2204,7 @@ impl<S: Sink> Context<'_, S> {
                                 if from >= 0 && to >= 0 && from < rows && to <= rows =>
                             {
                                 Some(Mat {
-                                    rows: to - from + 1,
+                                    rows: to - from,
                                     columns,
                                 })
                             }
@@ -2060,7 +2224,9 @@ impl<S: Sink> Context<'_, S> {
             },
 
             Range(length, _) => match self.const_eval(length)? {
-                Int(length) => Some(Int(length)),
+                Int(length) => Some(List {
+                    length: length.max(0),
+                }),
                 _ => None,
             },
 
@@ -2151,6 +2317,98 @@ impl<S: Sink> Context<'_, S> {
         }
     }
 
+    fn check_index(&self, base: Static, index: &Located<parse::Index>) -> Semantic<Option<Static>> {
+        use parse::Index;
+        use Static::*;
+
+        let check = |length, index| match self.const_eval(index) {
+            Some(Int(value)) if (0..length).contains(&value) => Ok(Some(value)),
+            Some(Int(value)) => Err(Located::at(
+                SemanticError::OutOfBounds(value, length, '['),
+                index.location().clone(),
+            )),
+
+            _ => Ok(None),
+        };
+
+        let check_range = |length, from, to| {
+            let from_value = check(length, from);
+            let to_value = match self.const_eval(to) {
+                Some(Int(to_value)) if (0..=length).contains(&to_value) => Some(to_value),
+
+                Some(Int(value)) => {
+                    return Err(Located::at(
+                        SemanticError::OutOfBounds(value, length, ']'),
+                        to.location().clone(),
+                    ))
+                }
+
+                _ => None,
+            };
+
+            match (from_value, to_value) {
+                (Err(error), _) => Err(error),
+                (Ok(Some(from)), Some(to)) => Ok(Some(to - from)),
+                (Ok(_), _) => Ok(None),
+            }
+        };
+
+        match (base, index.as_ref()) {
+            (List { length }, Index::Single(index)) => {
+                check(length, index)?;
+            }
+
+            (List { length }, Index::Range(from, to)) => {
+                if let Some(slice_length) = check_range(length, from, to)? {
+                    return Ok(Some(List {
+                        length: slice_length,
+                    }));
+                }
+            }
+
+            (Mat { rows, columns }, Index::Single(index)) => {
+                check(rows, index)?;
+                return Ok(Some(List { length: columns }));
+            }
+
+            (Mat { rows, columns }, Index::Range(from, to)) => {
+                if let Some(slice_rows) = check_range(rows, from, to)? {
+                    return Ok(Some(Mat {
+                        rows: slice_rows,
+                        columns,
+                    }));
+                }
+            }
+
+            (Mat { rows, columns }, Index::Indirect(first, second)) => {
+                check(rows, first)?;
+                check(columns, second)?;
+            }
+
+            (Mat { rows, columns }, Index::Transposed(index)) => {
+                check(columns, index)?;
+                return Ok(Some(List { length: rows }));
+            }
+
+            _ => (),
+        }
+
+        Ok(None)
+    }
+
+    fn update_static<F>(&mut self, id: &Located<Identifier>, updater: F)
+    where
+        F: FnOnce(&mut Self, Static) -> Option<Static>,
+    {
+        let id = id.as_ref();
+        if let Some(old) = self.scope.lookup_static(id) {
+            match updater(self, old) {
+                Some(new) => self.scope.statics.insert(id.clone(), new),
+                None => self.scope.statics.remove(id),
+            };
+        }
+    }
+
     fn expire(mut self) -> S {
         std::mem::take(&mut self.scope.symbols)
             .into_iter()
@@ -2173,6 +2431,8 @@ impl<S: Sink> Context<'_, S> {
     where
         F: FnOnce(&mut Context<'_, S>) -> R,
     {
+        self.scope.statics.clear();
+
         let sink = std::mem::take(&mut self.sink);
         let mut subcontext = Context {
             scope: SymbolTable {
@@ -2205,29 +2465,6 @@ impl<S: Sink> Context<'_, S> {
         Ok(result)
     }
 
-    fn drop_globals(&mut self, globals: &SymbolTable<'_>) {
-        for named in globals.symbols.values() {
-            if let Named::Var(Variable {
-                access: Access::Global(global),
-                typ,
-            }) = named
-            {
-                if let Some(destructor) = destructor(*typ, Ownership::Owned) {
-                    // Ya no quedan otras locales
-                    let local = Local::default();
-
-                    self.sink
-                        .push(Instruction::LoadGlobal(global.clone(), local));
-                    self.sink.push(Instruction::Call {
-                        target: Function::External(destructor),
-                        arguments: vec![local],
-                        output: None,
-                    });
-                }
-            }
-        }
-    }
-
     fn drop(&mut self, local: Local, typ: Type, ownership: Ownership) {
         if let Some(destructor) = destructor(typ, ownership) {
             self.sink.push(Instruction::Call {
@@ -2235,6 +2472,29 @@ impl<S: Sink> Context<'_, S> {
                 arguments: vec![local],
                 output: None,
             });
+        }
+    }
+}
+
+fn drop_globals<S: Sink>(sink: &mut S, globals: &SymbolTable<'_>) {
+    for named in globals.symbols.values() {
+        if let Named::Var(Variable {
+            access: Access::Global(global),
+            typ,
+        }) = named
+        {
+            if let Some(destructor) = destructor(*typ, Ownership::Owned) {
+                // Ya no quedan otras locales
+                let local = Local::default();
+                let load = Instruction::LoadGlobal(global.clone(), local);
+
+                sink.push(load);
+                sink.push(Instruction::Call {
+                    target: Function::External(destructor),
+                    arguments: vec![local],
+                    output: None,
+                });
+            }
         }
     }
 }
