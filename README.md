@@ -7,7 +7,7 @@ author:
   - Alejandro Soto Chacón, carné 2019008164
   - José Alejandro Chavarría Madriz, carné 2019067306
   - Natalia González Bermúdez, carné 2019165109
-date: \bigskip\bigskip\bigskip\bigskip Area Académica de\endgraf Ingeniería en Computadores \endgraf\bigskip\bigskip\ Lenguajes, Compiladores \endgraf e intérpretes (CE3104) \endgraf\bigskip\bigskip Profesor Marco Hernández Vásquez \endgraf\vfill  Semestre I
+date: \bigskip\bigskip\bigskip\bigskip Área Académica de\endgraf Ingeniería en Computadores \endgraf\bigskip\bigskip\ Lenguajes, Compiladores \endgraf e intérpretes (CE3104) \endgraf\bigskip\bigskip Profesor Marco Hernández Vásquez \endgraf\vfill  Semestre I
 header-includes:
   - \setlength\parindent{24pt}
   - \usepackage{url}
@@ -270,7 +270,12 @@ Finalmente se toma la decisión de trabajar con GTK por las siguientes razones:
 
 # 3. Problemas conocidos
 
+No se reportan.
+
 # 4. Actividades realizadas por estudiante
+
+![](doc/imgs/planact.jpg)
+
 
 # 5. Problemas encontrados
 
