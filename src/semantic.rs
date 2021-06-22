@@ -318,6 +318,9 @@ pub enum SemanticError {
     #[error("This parameter must be `0` or `1`, but was proven to always be `{0}`")]
     ExpectedMatMode(i32),
 
+    #[error("Expected `{0}` rows, found `{1}`")]
+    ExpectedRows(usize, usize),
+
     #[error("Expected `{0}` columns, found `{1}`")]
     ExpectedColumns(usize, usize),
 
@@ -1001,6 +1004,47 @@ impl<S: Sink> Context<'_, S> {
                 (Some(Insert), Mat) => {
                     if let Some(is_column) = check_mat_mode(this, 1)? {
                         check_index_arg(this, 2, is_column, true)?;
+
+                        if let Some(inserted) = args.get(0) {
+                            match (is_column, static_base, this.const_eval(inserted)) {
+                                (
+                                    false,
+                                    Some(Static::Mat {
+                                        rows,
+                                        columns: expected,
+                                    }),
+                                    Some(Static::Mat { columns, .. }),
+                                ) => {
+                                    if rows > 0 && columns != expected {
+                                        return Err(Located::at(
+                                            SemanticError::ExpectedColumns(
+                                                expected as usize,
+                                                columns as usize,
+                                            ),
+                                            inserted.location().clone(),
+                                        ));
+                                    }
+                                }
+
+                                (
+                                    true,
+                                    Some(Static::Mat { rows: expected, .. }),
+                                    Some(Static::Mat { columns: rows, .. }),
+                                ) => {
+                                    if expected > 0 && rows != expected {
+                                        return Err(Located::at(
+                                            SemanticError::ExpectedRows(
+                                                expected as usize,
+                                                rows as usize,
+                                            ),
+                                            inserted.location().clone(),
+                                        ));
+                                    }
+                                }
+
+                                _ => (),
+                            }
+                        }
                     }
 
                     this.update_static(target.var(), |_, old| match old {
