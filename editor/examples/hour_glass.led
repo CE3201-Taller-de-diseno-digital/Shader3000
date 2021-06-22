@@ -1,6 +1,7 @@
 procedure main(){
 	matrix = mat();
-	call hour_glass(5, true);
+	call hour_glass(5, false);
+	call off();
 }
 
 procedure hour_glass(times : type(11) , slice : type(false)){
@@ -32,21 +33,20 @@ procedure hour_glass(times : type(11) , slice : type(false)){
 		
 	}
 	
-	for num in matrix.shapeF step 2 {
+	if slice {
 	
-		matrix.delete(0,0);
-	
+		for num in matrix.shapeF step 2 {
+		
+			matrix.delete(0,0);
+		
+		}
 	}
-	
 	
 	for i in matrix.shapeF{
 	
 		for n in 8 {
 		
-			if i >= matrix.shapeF - 7{
-				
-				printledX("F",n,[false,false,false,false,false,false,false,false]);
-			}
+			
 			
 			if i < matrix.shapeF-7{
 			
@@ -55,6 +55,7 @@ procedure hour_glass(times : type(11) , slice : type(false)){
 			}
 		
 		}
+		delay(150,"mil");
 	
 	}
 	

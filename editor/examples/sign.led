@@ -1,42 +1,44 @@
 procedure main() {
-  for i in 5{
-  call f([
-                    [false,false,false,true,true,true,false,false,false,false,true,false,false,false,true,false,false,false,true,false,true,true,true,false,false,true,true,true,false,true,false,true,false,false,false],
+	  for i in 3{
+		  call sign([
+				    [true,true,true,false,false,false,false,true,false,false,false,true,false,false,false,true,false,true,true,true,false,false,true,true,true,false,true,false,true],
 
-                    [false,false,false,true,false,false,true,false,false,true,false,true,false,false,true,true,false,false,true,false,false,true,false,false,true,false,false,true,false,true,false,true,false,false,false],
+				    [true,false,false,true,false,false,true,false,true,false,false,true,true,false,false,true,false,false,true,false,false,true,false,false,true,false,true,false,true],
 
-                    [false,false,false,true,false,false,true,false,true,false,false,false,true,false,true,true,false,false,true,false,false,true,false,false,true,false,false,false,false,true,false,true,false,false,false],
+				    [true,false,false,true,false,true,false,false,false,true,false,true,true,false,false,true,false,false,true,false,false,true,false,false,false,false,true,false,true],
 
-                    [false,false,false,true,false,false,true,false,true,false,false,false,true,false,true,false,true,false,true,false,false,true,false,false,true,false,false,false,false,true,false,true,false,false,false],
+				    [true,false,false,true,false,true,false,false,false,true,false,true,false,true,false,true,false,false,true,false,false,true,false,false,false,false,true,false,true],
 
-                    [false,false,false,true,true,true,false,false,true,true,true,true,true,false,true,false,true,false,true,false,false,true,false,false,true,false,false,false,false,true,false,true,false,false,false],
+				    [true,true,true,false,false,true,true,true,true,true,false,true,false,true,false,true,false,false,true,false,false,true,false,false,false,false,true,false,true],
 
-                    [false,false,false,true,false,false,false,false,true,false,false,false,true,false,true,false,false,true,true,false,false,true,false,false,true,false,false,false,false,true,false,true,false,false,false],
+				    [true,false,false,false,false,true,false,false,false,true,false,true,false,false,true,true,false,false,true,false,false,true,false,false,false,false,true,false,true],
 
-                    [false,false,false,true,false,false,false,false,true,false,false,false,true,false,true,false,false,true,true,false,false,true,false,false,true,false,false,true,false,false,false,false,false,false,false],
+				    [true,false,false,false,false,true,false,false,false,true,false,true,false,false,true,true,false,false,true,false,false,true,false,false,true,false,false,false,false],
 
-                    [false,false,false,true,false,false,false,false,true,false,false,false,true,false,true,false,false,false,true,false,true,true,true,false,false,true,true,true,false,true,false,true,false,false,false]
-                    ]
-                    );
-  }
+				    [true,false,false,false,false,true,false,false,false,true,false,true,false,false,false,true,false,true,true,true,false,false,true,true,true,false,true,false,true]
+				    ]
+				    );
+	  }
   
 }
-procedure f(m: mat) {
+procedure sign(m: mat) {
+for j in 8
+{
+	m.insert([[false,false,false,false,false,false,false,false]],1);
+	m.insert([[false,false,false,false,false,false,false,false]],1,0);
+}
 for i in m.shapeC{
-	for n in 8
+	for n in 7
 	{
-		if i >=m.shapeC-7
-		{
-			printledX("C", n,[false,false,false,false,false,false,false,false]);
-		}
+		
 		if i <m.shapeC-7
 		{
-			printledX("C", n, m[:,i+n]);
+		printledX("C", n, m[:,i+n]);
 		}
 	  	
 	  	
   	}
-  	delay(300,"mil");
+  	delay(150,"mil");
   
   }
 }
