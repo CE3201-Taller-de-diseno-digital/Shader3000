@@ -13,13 +13,13 @@ use crate::{
 
 #[derive(Debug)]
 pub struct Ast {
-    procedures: Vec<Procedure>,
+    functions: Vec<Function>,
     eof: Location,
 }
 
 impl Ast {
-    pub fn iter(&self) -> impl Iterator<Item = &Procedure> {
-        self.procedures.iter()
+    pub fn iter(&self) -> impl Iterator<Item = &Function> {
+        self.functions.iter()
     }
 
     pub fn eof(&self) -> &Location {
@@ -28,13 +28,13 @@ impl Ast {
 }
 
 #[derive(Debug)]
-pub struct Procedure {
+pub struct Function {
     name: Located<Identifier>,
     parameters: Vec<Parameter>,
     statements: Vec<Statement>,
 }
 
-impl Procedure {
+impl Function {
     pub fn name(&self) -> &Located<Identifier> {
         &self.name
     }
@@ -89,7 +89,7 @@ pub enum Statement {
     },
 
     UserCall {
-        procedure: Located<Identifier>,
+        function: Located<Identifier>,
         args: Vec<Located<Expr>>,
     },
 
@@ -271,7 +271,7 @@ pub enum ParserError {
     #[error("Expected one of {0}")]
     ExpectedOption(String),
 
-    #[error("Missing type annotation for procedure parameter")]
+    #[error("Missing type annotation for function parameter")]
     MissingParameterType,
 
     #[error("Abrupt end of program")]
@@ -415,19 +415,32 @@ impl<T> ParseExt for Parse<T> {
 
 impl<'a, I: TokenStream<'a>> Parser<'a, I> {
     fn program(mut self) -> Parse<Ast> {
-        let mut procedures = Vec::new();
-        while self.tokens.peek().is_some() {
-            procedures.push(self.procedure()?);
+        let mut uniforms = Vec::new();
+        let mut functions = Vec::new();
+        while let Some(token) = self.tokens.peek() {
+            match token {
+                Token::Keyword(Keyword::Uniform) => uniforms.push(self.uniform()?);
+                Token::Keyword(Keyword::Fn) => functions.push(self.function()?);
+            }
         }
 
         Ok(Ast {
-            procedures,
+            uniforms,
+            functions,
             eof: self.last_known,
         })
     }
 
-    fn procedure(&mut self) -> Parse<Procedure> {
-        self.keyword(Keyword::Procedure)?;
+    fn uniform(&mut self) -> Parse<Uniform> {
+        self.keyword(Keyword::Uniform)?;
+        let of = self.typ()?;
+        let name = self.id()?;
+
+        Ok(Uniform { name, of })
+    }
+
+    fn function(&mut self) -> Parse<Function> {
+        self.keyword(Keyword::Function)?;
         let name = self.id()?;
 
         self.expect(Token::OpenParen)?;
@@ -436,7 +449,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
 
         let statements = self.statement_block()?;
 
-        Ok(Procedure {
+        Ok(Function {
             name,
             parameters,
             statements,
@@ -541,10 +554,10 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
 
     fn user_call(&mut self) -> Parse<Statement> {
         self.keyword(Keyword::Call)?;
-        let (procedure, args) = self.id_call()?;
+        let (function, args) = self.id_call()?;
         self.expect(Token::Semicolon)?;
 
-        Ok(Statement::UserCall { procedure, args })
+        Ok(Statement::UserCall { function, args })
     }
 
     fn global_lift(&mut self) -> Parse<Statement> {
