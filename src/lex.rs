@@ -41,9 +41,6 @@ use thiserror::Error;
 // Case-insensitive
 pub use unicase::Ascii as NoCase;
 
-/// Límite de longitud de identificadores.
-const MAX_ID_LENGTH: usize = 10;
-
 /// Literal entero máximo.
 const INT_MAX: i32 = i32::MAX;
 
@@ -63,31 +60,15 @@ pub enum LexerError {
     #[error("Expected {0:?}")]
     Expected(char),
 
-    /// No se reconoce una secuencia de escape en un literal de cadena.
-    #[error("Bad escape sequence")]
-    BadEscape,
-
-    /// No se cerró un terminal de cadena.
-    #[error("Unterminated string literal")]
-    UnterminatedString,
-
-    /// Un identificador excede el límite de longitud.
-    #[error("Identifier exceeds {MAX_ID_LENGTH} characters")]
-    IdTooLong,
-
     /// Una constante entera se encuentra fuera de rango.
     #[error("Integer literal overflow, valid range is [0, {INT_MAX}]")]
     IntOverflow,
-    ///
-    /// Se trató de comenzar un identificador con una letra mayúscula.
-    #[error("Identifiers must begin with a lowercase letter")]
-    UppercaseId,
 }
 
 /// Un identificador.
 ///
 /// Los identificadores cumplen ciertas reglas de contenido y longitud.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Identifier(Rc<NoCase<String>>);
 
 impl AsRef<str> for Identifier {
@@ -102,16 +83,6 @@ impl Display for Identifier {
     }
 }
 
-/// Un literal de cadana.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StrLiteral(Rc<NoCase<String>>);
-
-impl AsRef<NoCase<String>> for StrLiteral {
-    fn as_ref(&self) -> &NoCase<String> {
-        &self.0
-    }
-}
-
 /// Objeto resultante del análisis léxico.
 ///
 /// Un token contiene suficiente información para describir completamente
@@ -123,9 +94,6 @@ pub enum Token {
 
     /// Palabra clave.
     Keyword(Keyword),
-
-    /// Literal de cadena.
-    StrLiteral(StrLiteral),
 
     /// Literal de entero.
     IntLiteral(i32),
@@ -153,9 +121,6 @@ pub enum Token {
 
     /// `/`
     Div,
-
-    /// `//`
-    IntegerDiv,
 
     /// `%`
     Mod,
@@ -210,7 +175,6 @@ impl Display for Token {
         match self {
             Id(id) => write!(fmt, "identifier `{}`", id.0),
             Keyword(keyword) => write!(fmt, "keyword `{}`", keyword),
-            StrLiteral(string) => write!(fmt, "literal \"{}\"", string.0),
             IntLiteral(integer) => write!(fmt, "literal `{}`", integer),
             Assign => fmt.write_str("`=`"),
             Comma => fmt.write_str("`,`"),
@@ -220,7 +184,6 @@ impl Display for Token {
             Times => fmt.write_str("`*`"),
             Pow => fmt.write_str("`**`"),
             Div => fmt.write_str("`/`"),
-            IntegerDiv => fmt.write_str("`//`"),
             Mod => fmt.write_str("`%`"),
             Colon => fmt.write_str("`:`"),
             Semicolon => fmt.write_str("`;`"),
@@ -256,15 +219,25 @@ pub enum Keyword {
     In,
     Step,
     Len,
-    Range,
     Call,
     Global,
-    Procedure,
     Debug,
-    Blink,
-    Delay,
-    PrintLed,
-    PrintLedX,
+    Uniform,
+    Vec2,
+    Vec3,
+    Vec4
+    Float,
+    Output,
+    Input,
+    Function,
+    Main,
+    Transpose,
+    Normalize,
+    Max,
+    Dot,
+    Reflect,
+    Pow,
+    Inverse,
 }
 
 impl Display for Keyword {
@@ -283,16 +256,27 @@ impl Display for Keyword {
             For => "for",
             In => "in",
             Len => "len",
-            Range => "range",
             Step => "step",
             Call => "call",
             Global => "global",
-            Procedure => "procedure",
             Debug => "debug",
-            Blink => "blink",
-            Delay => "delay",
-            PrintLed => "PrintLed",
-            PrintLedX => "PrintLedX",
+            Uniform   => "uniform",
+            Vec2      => "ve2",
+            Vec3      => "ve3",
+            Vec4      => "ve4",
+            Mat       => "mat",
+            Float     => "flt",
+            Output    => "outpt",
+            Input     => "input",
+            Function  => "fn",
+            Main      => "main",
+            Transpose => "transpose",
+            Normalize => "normalize",
+            Max       => "max",
+            Dot       => "dot",
+            Reflect   => "reflect",
+            Pow       => "pow",
+            Inverse   => "inverse",
         };
 
         fmt.write_str(string)
@@ -324,10 +308,23 @@ impl FromStr for Keyword {
             (NoCase::new("global"), Global),
             (NoCase::new("procedure"), Procedure),
             (NoCase::new("debug"), Debug),
-            (NoCase::new("Blink"), Blink),
-            (NoCase::new("Delay"), Delay),
-            (NoCase::new("PrintLed"), PrintLed),
-            (NoCase::new("PrintLedX"), PrintLedX),
+            (NoCase::new("uniform"),   Uniform),
+            (NoCase::new("ve2"),       Vec2),
+            (NoCase::new("ve3"),       Vec3),
+            (NoCase::new("ve4"),       Vec4),
+            (NoCase::new("mat"),       Mat),
+            (NoCase::new("flt"),       Float),
+            (NoCase::new("outpt"),     Output),
+            (NoCase::new("input"),     Input),
+            (NoCase::new("fn"),        Function),
+            (NoCase::new("main"),      Main),
+            (NoCase::new("transpose"), Transpose),
+            (NoCase::new("normalize"), Normalize),
+            (NoCase::new("max"),       Max),
+            (NoCase::new("dot"),       Dot),
+            (NoCase::new("reflect"),   Reflect),
+            (NoCase::new("pow"),       Pow),
+            (NoCase::new("inverse"),   Inverse),
         ];
 
         KEYWORDS
@@ -363,11 +360,6 @@ enum State {
     /// consume la entrada actual y pasa a [`State::Start`].
     Complete(Token),
 
-    /// Se encontró `#`.
-    ///
-    /// Debería seguir otro `#` para entrar en un comentario.
-    Hash,
-
     /// Se encontró `*`.
     ///
     /// Puede resultar en [`Token::Times`] o [`Token::Pow`].
@@ -375,7 +367,7 @@ enum State {
 
     /// Se encontró `/`.
     ///
-    /// Puede resultar en [`Token::Div`] o [`Token::IntegerDiv`].
+    /// Puede resultar en [`Token::Div`] o un comentario.
     Slash,
 
     /// Se encontró `=`.
@@ -404,9 +396,6 @@ enum State {
     /// Este estado incluirá dígitos en el token mientras que
     /// el siguiente carácter sea un dígito.
     Integer(i32),
-
-    /// Literal de cadena.
-    StringChars(String),
 
     /// Término que puede ser un identificador o una palabra clave.
     Word(String),
@@ -498,15 +487,13 @@ impl<S: InputStream> Lexer<S> {
                 (Start, Some(')')) => self.state = Complete(CloseParen),
                 (Start, Some(']')) => self.state = Complete(CloseSquare),
                 (Start, Some('}')) => self.state = Complete(CloseCurly),
-                (Start, Some('#')) => self.state = Hash,
                 (Start, Some('*')) => self.state = Star,
                 (Start, Some('/')) => self.state = Slash,
                 (Start, Some('=')) => self.state = AssignOrEqual,
                 (Start, Some('<')) => self.state = LeftAngle,
                 (Start, Some('>')) => self.state = RightAngle,
 
-                // Cadenas, identificadores y palabras clave
-                (Start, Some('"')) => self.state = StringChars(String::new()),
+                // Identificadores y palabras clave
                 (Start, Some(c)) if c.is_ascii_alphabetic() => self.state = Word(c.to_string()),
 
                 // Inicio de una constante numérica. No se consume
@@ -526,17 +513,9 @@ impl<S: InputStream> Lexer<S> {
                 // Emisión retardada de tokens cualesquiera
                 (Complete(value), _) => break Ok(std::mem::replace(value, Plus)),
 
-                // `#` siempre debería iniciar un comentario de la forma `##`
-                (Hash, Some('#')) => self.state = Comment,
-                (Hash, _) => break Err(LexerError::Expected('#')),
-
                 // Multiplicación `*` y potencia `**`
                 (Star, Some('*')) => self.state = Complete(Pow),
                 (Star, _) => break Ok(Times),
-
-                // División `/` y división entera `//`
-                (Slash, Some('/')) => self.state = Complete(IntegerDiv),
-                (Slash, _) => break Ok(Div),
 
                 // Asignación `=` e igualdad `==`
                 (AssignOrEqual, Some('=')) => self.state = Complete(Equal),
@@ -550,6 +529,10 @@ impl<S: InputStream> Lexer<S> {
                 // Comparaciones `>` y `>=`
                 (RightAngle, Some('=')) => self.state = Complete(GreaterOrEqual),
                 (RightAngle, _) => break Ok(Greater),
+
+                // comentario `//` o división
+                (Slash, Some('/')) => self.state = Comment,
+                (Slash, _) => break Ok(Div),
 
                 // Los comentarios descartan la línea donde ocurren
                 (Comment, Some('\n')) => self.state = Start,
@@ -572,23 +555,8 @@ impl<S: InputStream> Lexer<S> {
                 // Si sigue algo que no es un dígito, la constante a terminado
                 (Integer(integer), _) => break Ok(IntLiteral(*integer)),
 
-                // Fin de literales de cadena
-                (StringChars(string), Some('"')) => {
-                    let literal = Rc::new(NoCase::new(std::mem::take(string)));
-                    self.state = Complete(Token::StrLiteral(self::StrLiteral(literal)));
-                }
-
-                // Casos entre comillas para literales de cadena
-                (StringChars(_), Some('\\')) => break Err(LexerError::BadEscape),
-                (StringChars(string), Some(c)) if is_string_char(c) => string.push(c),
-                (StringChars(_), _) => break Err(LexerError::UnterminatedString),
-
                 // Extensión de términos
                 (Word(word), Some(c)) if is_word_char(c) => {
-                    if word.len() == MAX_ID_LENGTH {
-                        break Err(LexerError::IdTooLong);
-                    }
-
                     word.push(c);
                 }
 
@@ -596,9 +564,6 @@ impl<S: InputStream> Lexer<S> {
                 (Word(word), _) => {
                     if let Ok(keyword) = self::Keyword::from_str(&word) {
                         break Ok(Keyword(keyword));
-                    } else if word.chars().nth(0).unwrap().is_ascii_uppercase() {
-                        self.next = self.start.clone();
-                        break Err(LexerError::UppercaseId);
                     } else {
                         break Ok(Id(Identifier(Rc::new(NoCase::new(std::mem::take(word))))));
                     }
@@ -635,12 +600,6 @@ impl<S: InputStream> Iterator for Lexer<S> {
             }
         }
     }
-}
-
-/// Determina si un carácter puede pertenecer al interior de
-/// un literal de cadena.
-fn is_string_char(c: char) -> bool {
-    c == '_' || (!c.is_control() && !c.is_whitespace())
 }
 
 /// Determina si un carácter puede pertenecer a un término.

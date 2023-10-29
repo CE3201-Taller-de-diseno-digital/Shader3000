@@ -444,7 +444,7 @@ impl<'a, I: TokenStream<'a>> Parser<'a, I> {
         let name = self.id()?;
 
         self.expect(Token::OpenParen)?;
-        let parameters = self.comma_separated(Self::parameter, true)?;
+        let parameters = self.comma_separated(Self::parameter, true)?;  // ver si esto soporta trailing comma
         self.expect(Token::CloseParen)?;
 
         let statements = self.statement_block()?;
